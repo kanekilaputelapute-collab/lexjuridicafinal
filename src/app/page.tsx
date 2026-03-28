@@ -1,65 +1,157 @@
-import Image from "next/image";
+'use client'
+import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { Shield, Mail, Lock, Globe, Loader2 } from 'lucide-react'
 
-export default function Home() {
+export default function AuthPage() {
+  const [isLogin, setIsLogin] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [newsletter, setNewsletter] = useState(false)
+  const router = useRouter()
+  const supabase = createClient()
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+
+    try {
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) throw error
+        router.push('/dashboard')
+      } else {
+        if (!newsletter) {
+          alert("L'opt-in newsletter est obligatoire pour s'inscrire.")
+          setLoading(false)
+          return
+        }
+        
+        const { data, error } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: { 
+            data: { newsletter_opt_in: true },
+            emailRedirectTo: `${window.location.origin}/auth/callback`
+          }
+        })
+        
+        if (error) throw error
+        
+        if (data?.user) {
+          alert("Inscription réussie ! Un email de confirmation vous a été envoyé.")
+          setIsLogin(true) // Switch to login after successful signup
+        }
+      }
+    } catch (err: any) {
+      alert("Erreur d'authentification : " + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` }
+    })
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-accent/10 via-background to-background">
+      <div className="max-w-md w-full glass-card p-8 border-accent/30 shadow-2xl">
+        <div className="text-center mb-10">
+          <div className="inline-block p-4 bg-accent/20 rounded-2xl text-accent mb-4">
+            <Shield size={40} />
+          </div>
+          <h1 className="text-3xl font-extrabold text-white">LexJuridica</h1>
+          <p className="text-gray-400 mt-2">
+            {isLogin ? 'Content de vous revoir' : 'Rejoignez l\'élite juridique'}
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        <form onSubmit={handleAuth} className="space-y-4">
+          <div className="relative">
+            <Mail className="absolute left-4 top-3.5 text-gray-500" size={18} />
+            <input 
+              type="email" 
+              placeholder="Email" 
+              required
+              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 focus:border-accent outline-none transition-all text-white"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          </div>
+          <div className="relative">
+            <Lock className="absolute left-4 top-3.5 text-gray-500" size={18} />
+            <input 
+              type="password" 
+              placeholder="Mot de passe" 
+              required
+              className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 focus:border-accent outline-none transition-all text-white"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          {!isLogin && (
+            <label className="flex items-center gap-3 p-2 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                checked={newsletter}
+                onChange={(e) => setNewsletter(e.target.checked)}
+                className="w-5 h-5 accent-accent cursor-pointer"
+                required
+              />
+              <span className="text-xs text-gray-400 group-hover:text-gray-200">
+                J'accepte de recevoir la newsletter juridique (Obligatoire)
+              </span>
+            </label>
+          )}
+
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full btn-premium flex items-center justify-center gap-2 mt-4"
           >
-            Documentation
-          </a>
+            {loading ? <Loader2 className="animate-spin" size={20} /> : (isLogin ? 'Se connecter' : 'Créer mon compte')}
+          </button>
+        </form>
+
+        <div className="mt-8">
+          <div className="relative flex items-center justify-center mb-6">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
+            <span className="relative px-4 bg-[#0f0f11] text-xs text-gray-500 uppercase">Ou continuer avec</span>
+          </div>
+
+          <button 
+            onClick={handleGoogleLogin}
+            className="w-full py-3 px-4 glass-card flex items-center justify-center gap-3 hover:bg-white/5 transition-all text-white font-medium"
+          >
+            <Globe size={20} className="text-accent" />
+            Google
+          </button>
         </div>
-      </main>
+
+        <p className="mt-8 text-center text-sm text-gray-500">
+          {isLogin ? "Pas encore de compte ?" : "Déjà membre ?"}
+          <button 
+            onClick={() => setIsLogin(!isLogin)} 
+            type="button"
+            className="ml-2 text-accent font-bold hover:underline"
+          >
+            {isLogin ? "S'inscrire" : "Se connecter"}
+          </button>
+        </p>
+
+        <div className="mt-8 flex justify-center gap-4 text-[10px] text-gray-600">
+          <Link href="/legal/cgu" className="hover:text-gray-400">CGU</Link>
+          <Link href="/legal/privacy" className="hover:text-gray-400">Confidentialité</Link>
+        </div>
+      </div>
     </div>
-  );
+  )
 }
