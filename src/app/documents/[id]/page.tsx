@@ -109,25 +109,25 @@ export default function DocumentDetailPage() {
         </div>
 
         {/* Right: Socratic Tutor Chat */}
-        <div className="w-[400px] flex flex-col h-[calc(100vh-4rem)] sticky top-8 print:hidden">
-          <div className="glass-card flex-1 flex flex-col overflow-hidden border-accent/20">
-            <div className="p-4 border-b border-white/5 flex items-center justify-between bg-accent/5">
-              <div className="flex items-center gap-2 font-bold">
-                <Bot size={20} className="text-accent" />
+        <div className="flex-[0.8] min-w-[450px] flex flex-col h-[calc(100vh-4rem)] sticky top-8 print:hidden">
+          <div className="glass-card flex-1 flex flex-col overflow-hidden border-accent/20 shadow-2xl">
+            <div className="p-5 border-b border-white/5 flex items-center justify-between bg-accent/5">
+              <div className="flex items-center gap-3 font-bold text-lg">
+                <Bot size={24} className="text-accent" />
                 Tuteur Socratique
               </div>
-              <div className="p-1 rounded-full bg-yellow-500/10 text-yellow-500" title="Style strict académique">
-                <Info size={14} />
+              <div className="p-1.5 rounded-full bg-yellow-500/10 text-yellow-500" title="Style strict académique">
+                <Info size={16} />
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-black/20">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${
+                  <div className={`max-w-[90%] p-4 rounded-2xl text-[15px] leading-relaxed shadow-lg ${
                     msg.role === 'user' 
-                      ? 'bg-accent text-black font-medium rounded-tr-none' 
-                      : 'bg-white/5 border border-white/10 rounded-tl-none'
+                      ? 'bg-accent text-black font-semibold rounded-tr-none' 
+                      : 'bg-white/10 border border-white/10 text-gray-100 rounded-tl-none'
                   }`}>
                     {msg.content}
                   </div>
@@ -135,33 +135,37 @@ export default function DocumentDetailPage() {
               ))}
               {chatLoading && (
                 <div className="flex justify-start">
-                  <div className="bg-white/5 p-3 rounded-2xl rounded-tl-none animate-pulse">
-                    <Loader2 size={16} className="animate-spin" />
+                  <div className="bg-white/5 p-4 rounded-2xl rounded-tl-none animate-pulse">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                      <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                      <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                    </div>
                   </div>
                 </div>
               )}
               <div ref={chatEndRef} />
             </div>
 
-            <form onSubmit={handleSendMessage} className="p-4 border-t border-white/5 flex gap-2">
+            <form onSubmit={handleSendMessage} className="p-5 border-t border-white/10 bg-black/40 flex gap-3">
               <input 
                 type="text" 
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Pose une question..."
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-accent"
+                placeholder="Posez votre question juridique ici..."
+                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-5 py-3 text-sm focus:outline-none focus:border-accent transition-all placeholder:text-gray-600"
               />
               <button 
                 type="submit"
                 disabled={chatLoading}
-                className="p-2 bg-accent text-black rounded-xl hover:scale-105 transition-transform disabled:opacity-50"
+                className="p-3 bg-accent text-black rounded-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-50 shadow-lg shadow-accent/20"
               >
-                <Send size={18} />
+                <Send size={20} />
               </button>
             </form>
           </div>
           
-          <p className="mt-4 text-[10px] text-center text-gray-500 italic">
+          <p className="mt-4 text-xs text-center text-gray-500 italic opacity-60">
             "Le tuteur ne donne jamais la solution, il guide votre réflexion."
           </p>
         </div>
