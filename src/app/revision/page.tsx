@@ -190,7 +190,7 @@ export default function RevisionPage() {
       next_review: new Date(card.next_review)
     }, grade)
     
-    setXpFlash(grade === 0 ? 2 : grade === 1 ? 10 : grade === 2 ? 20 : 35)
+    setXpFlash(grade === 1 ? 10 : grade === 2 ? 20 : 35)
     setTimeout(() => setXpFlash(null), 800)
 
     // Even in free revision, we update the SRS to reward the effort
@@ -207,7 +207,7 @@ export default function RevisionPage() {
       const { data: st } = await supabase.from('user_stats').select('cards_reviewed').eq('id', user.id).single()
       
       if (xp && st) {
-        const xpGain = grade === 0 ? 2 : grade === 1 ? 10 : grade === 2 ? 20 : 35;
+        const xpGain = grade === 1 ? 10 : grade === 2 ? 20 : 35;
         await supabase.from('user_xp').update({ 
           total_xp: xp.total_xp + xpGain, 
           level: Math.floor((xp.total_xp + xpGain)/1000)+1 
