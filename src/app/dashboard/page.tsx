@@ -75,7 +75,7 @@ export default function DashboardPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8">
+      <main className="flex-1 md:ml-64 p-4 md:p-8 pb-24 md:pb-8 transition-all">
         <div className="max-w-6xl mx-auto">
           <header className="mb-10">
             <h1 className="text-4xl font-extrabold mb-2">Tableau de Bord</h1>

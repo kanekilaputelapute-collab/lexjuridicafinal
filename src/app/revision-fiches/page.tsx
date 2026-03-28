@@ -43,7 +43,7 @@ export default function RevisionFichesPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8">
+      <main className="flex-1 md:ml-64 p-4 md:p-8 pb-24 md:pb-8 transition-all">
         <div className="max-w-6xl mx-auto">
           <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
