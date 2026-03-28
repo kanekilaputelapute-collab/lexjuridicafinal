@@ -19,7 +19,6 @@ async function callIA(prompt: string, model: string = 'mistral-large-latest', re
     throw new Error(`Clé API ${isGroq ? 'Groq' : 'Mistral'} manquante dans .env.local`)
   }
 
-  // Petit délai de sécurité pour éviter le spam (Rate Limit)
   await new Promise(resolve => setTimeout(resolve, 600))
 
   const controller = new AbortController()
@@ -33,7 +32,7 @@ async function callIA(prompt: string, model: string = 'mistral-large-latest', re
         'Authorization': `Bearer ${key}`
       },
       body: JSON.stringify({
-        model: isGroq ? 'mixtral-8x7b-32768' : model,
+        model: isGroq ? 'llama-3.1-8b-instant' : model,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.1,
         max_tokens: 4096
@@ -43,9 +42,7 @@ async function callIA(prompt: string, model: string = 'mistral-large-latest', re
     
     clearTimeout(timeoutId)
     
-    // Gestion du Rate Limit (429)
     if (response.status === 429 && retries > 0) {
-      console.warn(`Rate limit atteint sur ${model}, attente de 2s...`)
       await new Promise(resolve => setTimeout(resolve, 2000))
       return callIA(prompt, model, retries - 1, timeout)
     }
@@ -77,7 +74,6 @@ export async function POST(req: Request) {
 
     const isAdmin = user.email && ADMIN_EMAILS.includes(user.email)
 
-    // Check Energy
     const { data: stats, error: statsError } = await supabase
       .from('user_stats')
       .select('ai_energy')
@@ -104,119 +100,110 @@ export async function POST(req: Request) {
       systemPrompt = `Tu es un tuteur juridique expert. Tu vas créer une fiche de révision synthétique et hiérarchisée à partir du cours fourni.
 
 ÉTAPE 1 — LECTURE INTÉGRALE OBLIGATOIRE
-Avant d'écrire la moindre ligne, tu dois :
-1. Lire le cours en entier, jusqu'à la dernière phrase.
-2. Identifier toutes les parties et sous-parties (I, II, III, A, B, a, b...).
-3. Pour chaque partie, noter mentalement : les définitions, les règles, les distinctions, les exceptions, les exemples, les chiffres.
-Ne commencer à rédiger qu'une fois cette lecture complète.
-Contrôle obligatoire avant de commencer : liste les grandes parties identifiées en une seule ligne, puis commence la fiche. Si une partie du cours ne génère aucun contenu dans la fiche, explique pourquoi en une phrase.
+Avant d'écrire la moindre ligne, tu dois lire le cours en entier.
+Identifier toutes les parties et sous-parties (I, II, III, A, B, a, b...).
 
 ÉTAPE 2 — RÈGLE ABSOLUE ANTI-HALLUCINATION
 Tu n'utilises QUE les informations explicitement présentes dans le cours.
-Interdit : ajouter des précisions, exemples, exceptions ou définitions qui ne viennent pas du texte fourni.
-Interdit : compléter avec tes connaissances personnelles.
-Si une notion est trop peu développée, tu l'indiques en une ligne et tu passes.
+Interdit : ajouter des connaissances personnelles.
 
-ÉTAPE 3 — STRUCTURE DE LA FICHE (UTILISE DES BALISES HTML POUR LE SITE)
+ÉTAPE 3 — STRUCTURE DE LA FICHE (UTILISE DES BALISES HTML)
 La fiche suit exactement le plan du cours.
-- CHAQUE TITRE DE PARTIE doit être dans une balise <h3>.
-- Chaque notion doit être dans une liste <ul><li>.
-Structure pour chaque partie :
-<h3>TITRE DE LA PARTIE</h3>
-<ul>
-  <li><strong>Notion-clé :</strong> résumé en 1-2 phrases denses.</li>
-  <li>⚠️ <strong>Point important :</strong> règle de principe, condition, distinction ou exception.</li>
-  <li>📌 <strong>À retenir :</strong> formulation courte et mémorisable.</li>
-</ul>
-
-ÉTAPE 4 — RÈGLES DE FORMAT
-- Utilise exclusivement <h3>, <ul>, <li> et <strong> pour le formatage.
-- Aucun commentaire sur ta propre production.
-- Longueur : dense mais lisible. Ne résume pas à outrance.
-
-ÉTAPE 5 — VÉRIFICATION FINALE
-Vérifie que chaque partie est représentée, chaque règle a son exception, et aucune information externe n'est ajoutée.`
+Utilise exclusivement <h3>, <ul>, <li> et <strong> pour le formatage.`
     } else if (type === 'flashcards') {
-      systemPrompt = `Tu es un expert juridique et pédagogique spécialisé dans la création de flashcards pour étudiants en droit (L1-M2). Tu reçois un extrait de cours (potentiellement une partie parmi plusieurs).
+      const isPass1 = text.startsWith('[PASS1]')
+      const isPass2 = text.startsWith('[PASS2]')
+      const isPass3 = text.startsWith('[PASS3]')
 
-ÉTAPE 1 — LECTURE ET CARTOGRAPHIE
-Avant d'écrire la première flashcard :
-1. Lis l'intégralité du texte fourni jusqu'à la dernière ligne.
-2. Identifie toutes les parties et sous-parties (I, II, A, B, 1, 2...).
-3. Liste mentalement : définitions, conditions, distinctions, règles, exceptions, articles, arrêts, délais, valeurs juridiques particulières.
-4. Ne génère rien avant d'avoir fini cette lecture.
+      if (isPass1) {
+        systemPrompt = `RÔLE : CERVEAU ANALYTIQUE JURIDIQUE — PASS 1 CARTOGRAPHIE
 
-ÉTAPE 2 — RÈGLES DE GÉNÉRATION
+MISSION : Lire le texte et produire une cartographie EXHAUSTIVE. Tu ne génères PAS de flashcards ici.
 
-RÈGLE 1 — EXHAUSTIVITÉ
-Chaque section identifiée produit au minimum 1 flashcard, sauf si elle ne contient aucune notion définie.
-Les éléments suivants doivent TOUJOURS générer une carte même s'ils semblent secondaires :
-- Délais de prescription mentionnés explicitement dans le cours.
-- Valeur juridique particulière d'un texte (ex : valeur constitutionnelle).
-- Notions de rupture historique identifiées comme telles dans le cours.
+ÉTAPES OBLIGATOIRES :
+1. Reconstruis le plan exact : tous les titres, sections, sous-sections visibles dans le texte.
+2. Pour chaque paragraphe, extrais TOUS les concepts clés.
+   Format : "Concept : détail exact tiré du texte"
+3. Extrais TOUS les arrêts cités.
+   Format : "Arrêt [Nom] ([date]) : apport exact"
+4. RÈGLE CRITIQUE — LISTES : Si le texte contient une liste numérotée ou à puces (conditions, postes, étapes, exceptions), tu DOIS recopier CHAQUE élément un par un. Interdit d'écrire "X conditions" sans les lister toutes.
+5. RÈGLE CRITIQUE — ÉVOLUTIONS : Si une règle a évolué dans le temps, note les deux états (avant/après) séparément.
 
-RÈGLE 2 — ANTI-DOUBLONS (CRITIQUE)
-Avant chaque carte, vérifie qu'aucune carte précédente dans ce même appel ne couvre déjà cette notion.
-- Interdit : deux cartes qui testent le même fait sous des formulations différentes.
-- Si une définition liste déjà les éléments constitutifs, ne recrée PAS une carte séparée sur ces mêmes éléments.
-- Si une notion est déjà couverte, teste une dimension nouvelle : exception, condition, exemple concret.
+FORMAT DE SORTIE : TEXTE BRUT UNIQUEMENT, pas de JSON.
+- [TITRE SECTION]
+  * Concept : détail
+  * Arrêt X (date) : portée
+  * Condition 1 : ...
+  * Condition 2 : ...`
 
-RÈGLE 3 — ANTI-HALLUCINATION
-Tu n'utilises QUE les informations explicitement présentes dans le texte fourni.
-- Interdit : ajouter exemples, précisions ou définitions absents du texte.
-- Interdit : compléter avec tes connaissances personnelles.
+      } else if (isPass2) {
+        systemPrompt = `RÔLE : AUDITEUR JURIDIQUE CRITIQUE — PASS 2 VÉRIFICATION
 
-RÈGLE 4 — COMPLÉTUDE DES RÉPONSES
-Chaque réponse est complète et autonome.
-- Interdit : phrase tronquée ou incomplète.
-- Si la réponse dépasse 3 lignes → la question couvre trop de notions → découpe en 2 cartes.
+MISSION : Comparer la cartographie du Pass 1 avec le texte source et détecter TOUT ce qui a été oublié. Tu ne génères PAS de flashcards ici.
 
-RÈGLE 5 — UNE NOTION PAR CARTE
-Chaque flashcard porte sur UN seul angle ou distinction.
-Bonne : "Quelle est la condition de domicile pour la responsabilité des parents ?"
-Mauvaise : "Expliquez la responsabilité civile." (trop large)
+ÉTAPES OBLIGATOIRES :
+1. Lis la cartographie du Pass 1.
+2. Relis le texte source mot par mot.
+3. Pour chaque section du texte, vérifie que CHAQUE notion, condition, arrêt, exception, délai, définition est présent dans la cartographie.
+4. Si quelque chose manque, ajoute-le avec le tag [MANQUANT].
+5. Si une information est inexacte, corrige-la avec le tag [CORRIGÉ].
+6. Si une liste est incomplète, complète-la avec le tag [COMPLÉTÉ].
 
-RÈGLE 6 — PRIORITÉ DES NOTIONS (dans cet ordre)
-1. Définitions fondamentales
-2. Conditions et éléments constitutifs
-3. Distinctions et oppositions (A vs B)
-4. Règles de principe et leurs exceptions
-5. Régime juridique (prescription, charge de preuve, juridiction)
-6. Arrêts et articles cités dans le texte
+FORMAT DE SORTIE : TEXTE BRUT UNIQUEMENT.
+Retourne la cartographie COMPLÈTE et CORRIGÉE :
+- [TITRE SECTION]
+  * Concept : détail
+  * [MANQUANT] Concept oublié : détail
+  * [CORRIGÉ] Concept corrigé : nouvelle valeur`
 
-RÈGLE 7 — CALIBRAGE DU NOMBRE
-- Pas de limite fixe par page : une page dense avec 5 notions distinctes peut justifier 5 cartes ; une page de transition peut n'en justifier aucune.
-- Le seul critère : chaque carte doit apporter une valeur unique. Si tu hésites entre créer ou ne pas créer → ne crée pas.
-- Préfère 1 carte dense et précise à 3 cartes qui se recoupent.
-- Interdit : créer une carte séparée uniquement pour citer un arrêt → intègre la référence dans la carte de la règle concernée.
-- Interdit : reproduire un article de loi mot pour mot → reformule en testant la compréhension du mécanisme juridique.
+      } else if (isPass3) {
+        systemPrompt = `RÔLE : EXPERT PÉDAGOGIQUE JURIDIQUE — PASS 3 GÉNÉRATION
 
-RÈGLE 8 — CHRONOLOGIE DES ARRÊTS
-Lorsque plusieurs arrêts sont cités pour illustrer une même règle, ne présente jamais un arrêt antérieur comme "confirmant" un arrêt postérieur.
-- Interdit : "arrêt de 1927, confirmé par arrêt de 1922"
-- Correct : "règle consacrée par deux arrêts fondateurs : Civ. 11 janv. 1922 (S 1924.1.105) et Civ. 26 avril 1927 (S 1927.1.201)"
+MISSION : Transformer la cartographie vérifiée en flashcards parfaites.
 
-RÈGLE 9 — NOTIONS DE RUPTURE HISTORIQUE
-Si le cours identifie explicitement un événement ou une notion comme ayant provoqué une rupture dans l'évolution du droit (ex : apparition des dommages anonymes, Révolution industrielle), cette notion doit obligatoirement générer au moins une flashcard testant sa signification juridique et ses conséquences sur le droit.
+RÈGLES DE GÉNÉRATION :
+1. EXHAUSTIVITÉ TOTALE : Chaque point de la cartographie devient au moins une flashcard. Zéro omission.
+2. FIDÉLITÉ ABSOLUE : Tu ne peux écrire QUE ce qui est dans la cartographie ou le texte source. Jamais d'invention. Si tu n'es pas certain : omets la carte plutôt qu'inventer.
+3. TYPOLOGIE VARIÉE : Alterne les types.
+   - Définition : "Qu'est-ce que X ?"
+   - Conditions : "Quelles sont les conditions de X ?"
+   - Distinction : "Quelle est la différence entre X et Y ?"
+   - Jurisprudence : "Quel est l'apport de l'arrêt X ?"
+   - Mini-cas : "Dans quelle situation applique-t-on X ?"
+4. DOUBLE ANGLE : Les notions complexes ont 2 cartes sous des angles différents.
+5. DROIT TEMPOREL : Si une règle a évolué, précise toujours la période. Ex : "Depuis l'ord. 2016..." ou "Avant l'arrêt Bertrand 1997..."
+6. ARRÊTS FONDATEURS : Une carte dédiée par arrêt majeur.
+7. ANTI-DOUBLONS : Une seule carte par notion.
+8. AUTO-VÉRIFICATION : Avant de valider une carte, vérifie :
+   - Qu’elle correspond EXACTEMENT au texte source.
+   - Qu’elle n’est pas redondante avec une autre carte générée dans ce bloc.
 
-ÉTAPE 3 — CONTRAINTE OUTPUT STRICTE
-Tu es limité à 4 000 tokens de réponse. Si le texte est long :
-- Priorise les notions selon la Règle 6.
-- Arrête-toi proprement après la dernière carte complète.
-- N'écris JAMAIS une carte dont la réponse serait tronquée faute de place.
+FORMAT DE SORTIE — IMPÉRATIF :
+Réponds EXCLUSIVEMENT par un tableau JSON valide, sans texte avant ni après :
+[{"q": "Question ?", "a": "Réponse complète et autonome."}]`
 
-ÉTAPE 4 — VÉRIFICATION AVANT ENVOI
-□ Aucune réponse tronquée ?
-□ Pas de doublons dans cet appel ?
-□ Chaque carte = une seule notion ?
-□ Toutes les sections couvertes, y compris délais et valeurs juridiques ?
-□ Aucune information externe ajoutée ?
-□ Aucun article reproduit mot pour mot ?
-□ Arrêts intégrés dans la carte de leur règle, jamais isolés ?
+      } else {
+        systemPrompt = `Tu es un expert juridique spécialisé dans la création de flashcards (L1-M2).
 
-FORMAT DE SORTIE — IMPÉRATIF
-Réponds EXCLUSIVEMENT par un tableau JSON valide, sans texte avant ni après, sans backticks, sans markdown :
-[{"q": "Question courte et précise ?", "a": "Réponse complète et autonome."}]`
+ÉTAPE 1 — CARTOGRAPHIE MENTALE (ne pas écrire)
+Lis le texte en entier. Mémorise chaque titre, chaque liste numérotée, chaque arrêt cité.
+
+ÉTAPE 2 — AUTOCRITIQUE MENTALE (ne pas écrire)
+Demande-toi : ai-je bien vu toutes les listes ? Tous les arrêts ? Toutes les conditions et exceptions ?
+
+ÉTAPE 3 — GÉNÉRATION
+Pour chaque section du texte, génère au moins 1 carte avant de passer à la suivante.
+
+RÈGLES :
+- FIDÉLITÉ ABSOLUE : tu ne peux écrire QUE ce qui est dans le texte. Jamais d'invention.
+- DROIT TEMPOREL : si une règle a évolué, précise toujours la période.
+- ANTI-DOUBLONS : une seule carte par notion.
+- ARRÊTS : une carte dédiée par arrêt majeur.
+
+FORMAT DE SORTIE — IMPÉRATIF :
+Réponds EXCLUSIVEMENT par un tableau JSON valide, sans texte avant ni après :
+[{"q": "Question ?", "a": "Réponse."}]`
+      }
     } else if (type === 'chat') {
       systemPrompt = `Tu es un tuteur socratique expert en droit. Guide l'élève sans donner la réponse. Context: ${context || ''}`
     }
@@ -230,15 +217,17 @@ Réponds EXCLUSIVEMENT par un tableau JSON valide, sans texte avant ni après, s
       try {
         result = await callIA(fullPrompt, 'mistral-large-latest', 2, 35000)
       } catch (e: any) {
-        console.warn('Mistral fallback:', e.message)
-        result = await callIA(fullPrompt, 'groq-mixtral-8x7b-32768')
+        result = await callIA(fullPrompt, 'llama-3.1-8b-instant')
       }
     } else {
-      // On passe explicitement le timeout de 240000ms ici aussi
       result = await callIA(fullPrompt, 'mistral-large-latest', 2, 240000)
     }
 
-    // Consomme l'énergie uniquement pour les non-admins
+    // Vérification de la validité du résultat avant décrémentation de l'énergie
+    if (!result || result.trim().length < 10) {
+      return NextResponse.json({ error: "L'IA a retourné une réponse vide ou invalide." }, { status: 502 })
+    }
+
     if (!isAdmin) {
       await supabase.from('user_stats').update({ ai_energy: stats.ai_energy - 1 }).eq('id', user.id)
     }
