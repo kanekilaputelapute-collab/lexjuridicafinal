@@ -53,13 +53,6 @@ export default function AuthPage() {
     }
   }
 
-  const handleGoogleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` }
-    })
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-accent/10 via-background to-background">
       <div className="max-w-md w-full glass-card p-8 border-accent/30 shadow-2xl">
@@ -121,20 +114,7 @@ export default function AuthPage() {
           </button>
         </form>
 
-        <div className="mt-8">
-          <div className="relative flex items-center justify-center mb-6">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
-            <span className="relative px-4 bg-[#0f0f11] text-xs text-gray-500 uppercase">Ou continuer avec</span>
-          </div>
 
-          <button 
-            onClick={handleGoogleLogin}
-            className="w-full py-3 px-4 glass-card flex items-center justify-center gap-3 hover:bg-white/5 transition-all text-white font-medium"
-          >
-            <Globe size={20} className="text-accent" />
-            Google
-          </button>
-        </div>
 
         <p className="mt-8 text-center text-sm text-gray-500">
           {isLogin ? "Pas encore de compte ?" : "Déjà membre ?"}
