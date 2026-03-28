@@ -28,7 +28,7 @@ export default function RevisionPage() {
   useEffect(() => {
     fetchDecks()
     
-    // Auto-refresh the 'due' status every 30 seconds to show cards appearing in real-time
+    // Auto-refresh the 'due' status every 30 seconds
     const timer = setInterval(() => {
       setDecks(prevDecks => prevDecks.map(deck => {
         const now = new Date()
@@ -39,8 +39,20 @@ export default function RevisionPage() {
       }))
     }, 30000)
 
-    return () => clearInterval(timer)
-  }, [])
+    // Keyboard support: Space bar to flip
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && selectedDeck && cards.length > 0 && !sessionFinished) {
+        e.preventDefault() // Prevent scrolling
+        setIsFlipped(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [selectedDeck, cards.length, sessionFinished])
 
   async function fetchDecks() {
     setLoading(true)
@@ -364,7 +376,14 @@ export default function RevisionPage() {
                 {xpFlash && <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: -40 }} exit={{ opacity: 0 }} className="absolute left-1/2 -translate-x-1/2 text-2xl font-black text-accent z-50">+{xpFlash} XP</motion.div>}
               </AnimatePresence>
               <div className="relative h-[400px] perspective-1000">
-                <motion.div key={cards[currentIdx].id} initial={{ rotateY: 0 }} animate={{ rotateY: isFlipped ? 180 : 0 }} transition={{ duration: 0.6, type: 'spring' }} className="w-full h-full relative preserve-3d cursor-pointer" onClick={() => !isFlipped && setIsFlipped(true)}>
+                <motion.div 
+                  key={cards[currentIdx].id} 
+                  initial={{ rotateY: 0 }} 
+                  animate={{ rotateY: isFlipped ? 180 : 0 }} 
+                  transition={{ duration: 0.6, type: 'spring' }} 
+                  className="w-full h-full relative preserve-3d cursor-pointer" 
+                  onClick={() => setIsFlipped(prev => !prev)}
+                >
                   <div className={`absolute inset-0 backface-hidden glass-card p-8 flex flex-col items-center justify-center text-center`}>
                     <div className="text-xs text-accent uppercase tracking-widest mb-4">Question</div>
                     <div className="text-xl font-medium">{cards[currentIdx].front}</div>
