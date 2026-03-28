@@ -16,7 +16,10 @@ export default function RevisionFichesPage() {
   useEffect(() => {
     async function fetchFiches() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        window.location.href = '/'
+        return
+      }
 
       const { data } = await supabase
         .from('documents')

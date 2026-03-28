@@ -57,7 +57,10 @@ export default function RevisionPage() {
   async function fetchDecks() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) {
+      window.location.href = '/'
+      return
+    }
 
     const { data: decksData } = await supabase
       .from('decks')

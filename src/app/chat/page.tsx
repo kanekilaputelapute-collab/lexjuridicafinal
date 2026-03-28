@@ -14,7 +14,10 @@ export default function ChatSelectionPage() {
   useEffect(() => {
     async function fetchDocs() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        window.location.href = '/'
+        return
+      }
 
       const { data } = await supabase
         .from('documents')

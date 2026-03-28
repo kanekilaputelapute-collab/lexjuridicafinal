@@ -19,7 +19,10 @@ export default function DashboardPage() {
 
     async function fetchData() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        window.location.href = '/'
+        return
+      }
 
       // Fetch Recent Docs
       const { data: docs } = await supabase

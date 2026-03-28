@@ -14,7 +14,10 @@ export default function LeaderboardPage() {
   useEffect(() => {
     async function fetchLeaderboard() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
+      if (!user) {
+        window.location.href = '/'
+        return
+      }
 
       const { data: board } = await supabase
         .from('user_xp')
