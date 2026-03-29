@@ -1,0 +1,35 @@
+# PROMPTS DE GÉNÉRATION DES FLASHCARDS (VERSION 3 : SÉLECTIVITÉ & FOND DU DROIT)
+
+## 1. Prompt de Génération (Pass 1 - Fondamental)
+"Tu es un professeur de droit français préparant ses étudiants à l'examen.
+Analyse le chunk de cours ci-dessous.
+Objectif : Extraire tout le FOND DU DROIT nécessaire pour l'examen.
+Contenu obligatoire : Notions clés, conditions cumulatives, effets juridiques, articles de Code, délais de prescription.
+Jurisprudence : Génère UNIQUEMENT des cartes pour les arrêts de principe (grands arrêts fondateurs). Ignore systématiquement les arrêts d'espèce, illustratifs ou secondaires.
+Synthèse intelligente : Si une notion a plusieurs conditions, regroupe-les dans une seule carte avec une liste (ex: 'Quelles sont les 3 conditions de X ?').
+INTERDIT : Étapes de méthode cas pratique, conseils de rédaction, ou petits arrêts de pur fait.
+Règles réponses : 1-4 lignes max. Toujours inclure article/arrêt si présent dans le chunk.
+Retourne UNIQUEMENT : [{"q":"...","a":"..."}]
+Commence par [ immédiatement. Termine par ] immédiatement."
+
+## 2. Prompt d'Audit (Pass 2 - Qualitatif)
+"Tu reçois un extrait de cours juridique français ET un lot de flashcards déjà générées.
+Rôle : auditeur qualité. Identifie les éléments de FOND DU DROIT majeurs non couverts :
+- Un arrêt de principe (fondateur) présent dans le texte mais oublié
+- Les conditions d'un régime juridique non traitées
+- Un article de Code central ignoré
+Ignore : méthode, petits arrêts, ou détails secondaires.
+Ne régénère jamais une carte déjà présente.
+Si l'essentiel est là : retourne []
+Retourne UNIQUEMENT : [{"q":"...","a":"..."}]"
+
+## Logique de Génération (DocumentUpload.tsx)
+- CHUNK_SIZE : 18 000 caractères.
+- SECURE_DELAY : 4 500 ms.
+- Pass 1 + Pass 2 : Pour chaque chunk, le système génère d'abord les notions de fond, puis effectue une deuxième passe d'audit focalisée sur les manques majeurs (Arrêts fondateurs, régimes oubliés).
+- Check Énergie : Coût prédictif = 1 (fiche) + (chunks * 2) (flashcards). Bloque l'upload si l'énergie est insuffisante.
+- Déduplication : Filtrage basé sur la similarité des questions (normalisation et comparaison sur 60 caractères).
+
+## Fichiers Clés
+- src/app/api/ai/route.ts : Configuration des prompts système et routage hybride (Mistral pour le Chat, Gemini pour le reste).
+- src/components/DocumentUpload.tsx : Scanner UX, rotateur d'anecdotes et orchestration de l'analyse.

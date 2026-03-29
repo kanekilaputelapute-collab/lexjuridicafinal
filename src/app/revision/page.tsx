@@ -8,6 +8,7 @@ import UserStatusBar from '@/components/UserStatusBar'
 import { Brain, Play, ChevronRight, Loader2, BookOpen, Edit2, Download, Check, X, Trash2 } from 'lucide-react'
 import confetti from 'canvas-confetti'
 import { generateSRSPDF } from '@/lib/pdf'
+import { updateGamification } from '@/lib/gamification'
 
 export default function RevisionPage() {
   const [decks, setDecks] = useState<any[]>([])
@@ -170,15 +171,13 @@ export default function RevisionPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         const { data: xp } = await supabase.from('user_xp').select('total_xp, level').eq('id', user.id).single()
-        const { data: st } = await supabase.from('user_stats').select('cards_reviewed').eq('id', user.id).single()
-        if (xp && st) {
+        if (xp) {
           await supabase.from('user_xp').update({
             total_xp: xp.total_xp + 2,
             level: Math.floor((xp.total_xp + 2) / 1000) + 1
           }).eq('id', user.id)
-          await supabase.from('user_stats').update({
-            cards_reviewed: st.cards_reviewed + 1
-          }).eq('id', user.id)
+          
+          await updateGamification(user.id, 'flashcard')
           window.dispatchEvent(new Event('update-xp'))
         }
       }
@@ -219,17 +218,15 @@ export default function RevisionPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data: xp } = await supabase.from('user_xp').select('total_xp, level').eq('id', user.id).single()
-      const { data: st } = await supabase.from('user_stats').select('cards_reviewed').eq('id', user.id).single()
       
-      if (xp && st) {
+      if (xp) {
         const xpGain = grade === 1 ? 10 : grade === 2 ? 20 : 35;
         await supabase.from('user_xp').update({ 
           total_xp: xp.total_xp + xpGain, 
           level: Math.floor((xp.total_xp + xpGain)/1000)+1 
         }).eq('id', user.id)
-        await supabase.from('user_stats').update({ 
-          cards_reviewed: st.cards_reviewed + 1 
-        }).eq('id', user.id)
+        
+        await updateGamification(user.id, 'flashcard')
         window.dispatchEvent(new Event('update-xp'))
       }
     }

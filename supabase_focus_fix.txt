@@ -1,4 +1,0 @@
--- AJOUT DE LA COLONNE FOCUS_MINUTES
--- Exécutez cette commande dans le SQL Editor de Supabase pour activer le compteur de temps.
-
-ALTER TABLE user_stats ADD COLUMN focus_minutes INTEGER DEFAULT 0;

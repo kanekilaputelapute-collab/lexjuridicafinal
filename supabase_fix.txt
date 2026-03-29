@@ -1,4 +1,0 @@
--- COMMANDE À EXÉCUTER DANS LE SQL EDITOR DE SUPABASE
--- Cette commande permet de corriger l'erreur 400 lors de l'upload en autorisant la mise à jour des documents existants.
-
-ALTER TABLE documents ADD CONSTRAINT unique_user_doc_title UNIQUE (user_id, title);

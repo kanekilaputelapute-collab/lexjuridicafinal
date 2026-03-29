@@ -60,6 +60,7 @@
 - Styling : Tailwind CSS
 
 ## CONTRAINTES ABSOLUES
+- Ne JAMAIS modifier la logique ou les prompts des FLASHCARDS (Version 3 : Sélectivité Jurisprudentielle & Fond du Droit) sans demande explicite.
 - Ne JAMAIS dépasser 55s de traitement dans une fonction serverless Vercel
 - Ne JAMAIS envoyer plus de 20 000 chars par appel Mistral (chunking frontend)
 - Ne JAMAIS modifier la logique auth/quota Supabase sans validation explicite

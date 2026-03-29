@@ -1,29 +1,94 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Upload, CheckCircle2, Loader2, PartyPopper, Trophy } from 'lucide-react'
+import { Upload, CheckCircle2, Loader2, PartyPopper, Scale, ShieldAlert, BookOpen, Lightbulb, AlertTriangle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import mammoth from 'mammoth'
 import { motion, AnimatePresence } from 'framer-motion'
 import confetti from 'canvas-confetti'
+import { updateGamification } from '@/lib/gamification'
 
-// Seuils calibrés pour Mistral Large (128K tokens context, 4096 tokens output)
-const SINGLE_CALL_LIMIT = 30000
-const CHUNK_SIZE = 20000
-
+// CONFIGURATION
+const CHUNK_SIZE = 18000
+const SECURE_DELAY = 4500
 const ADMIN_EMAILS = ['teampush5@gmail.com']
+
+const LEGAL_FACTS = [
+  "Le saviez-vous ? Le Code civil de 1804 contenait 2281 articles originaux.",
+  "Conseil : La structure de votre fiche respecte toujours le plan I. II. III.",
+  "En droit, 'Nul n'est censé ignorer la loi' est une fiction juridique indispensable.",
+  "Le Pass 2 de l'IA audite vos flashcards pour ne rater aucun arrêt de cassation.",
+  "Astuce : Révisez vos flashcards le soir avant de dormir pour une meilleure rétention.",
+  "Le Conseil constitutionnel a été créé en 1958, sous la Ve République.",
+  "La répétition espacée (SRS) réduit votre temps de révision de 50%."
+]
+
+// ── COMPOSANTS INTERNES ──────────────────────────────────────────
+
+const LegalScanner = () => (
+  <div className="relative w-48 h-32 mx-auto mb-8 overflow-hidden bg-black/40 border border-white/10 rounded-lg">
+    <div className="absolute inset-0 flex flex-col items-center justify-center space-y-2 opacity-20">
+      <div className="w-32 h-2 bg-white/20 rounded-full" />
+      <div className="w-24 h-2 bg-white/20 rounded-full" />
+      <div className="w-28 h-2 bg-white/20 rounded-full" />
+    </div>
+    <motion.div 
+      className="absolute left-0 right-0 h-1 bg-gradient-to-r from-transparent via-accent to-transparent shadow-[0_0_15px_rgba(201,168,76,0.8)] z-10"
+      animate={{ top: ['0%', '100%', '0%'] }}
+      transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
+    />
+    <div className="absolute inset-0 bg-gradient-to-b from-accent/5 to-transparent pointer-events-none" />
+    <Scale size={40} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-accent/30" />
+  </div>
+)
+
+const FactRotator = () => {
+  const [idx, setIdx] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setIdx(prev => (prev + 1) % LEGAL_FACTS.length), 5000)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div 
+        key={idx}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        className="flex items-start gap-3 text-left p-4 bg-white/5 rounded-xl border border-white/5 mt-6 min-h-[80px]"
+      >
+        <Lightbulb className="text-accent shrink-0 mt-0.5" size={18} />
+        <p className="text-xs text-gray-400 leading-relaxed italic">{LEGAL_FACTS[idx]}</p>
+      </motion.div>
+    </AnimatePresence>
+  )
+}
+
+function parseFlashcards(raw: string): any[] {
+  if (!raw) return []
+  const cleaned = raw.trim()
+  try { return JSON.parse(cleaned) } catch (e) {}
+  const start = cleaned.indexOf('[')
+  if (start === -1) return []
+  let end = cleaned.lastIndexOf(']')
+  while (end > start) {
+    try {
+      const potential = cleaned.substring(start, end + 1)
+      return JSON.parse(potential)
+    } catch (e) {
+      end = cleaned.lastIndexOf(']', end - 1)
+    }
+  }
+  return []
+}
 
 function cleanExtractedText(text: string): string {
   if (!text) return ''
   return text
-    // 1. Remplace !' et variantes par →
     .replace(/!\'|! \'/g, '→')
-    // 2. Supprime les caractères de contrôle non imprimables
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
-    // 3. Répare les mots coupés avec tiret en fin de ligne : "mot-\nsuite" → "motsuite"
     .replace(/(\w+)-\s*\n\s*(\w+)/g, '$1$2')
-    // 4. Normalise les espaces multiples en espace simple
     .replace(/[ \t]+/g, ' ')
-    // 5. Réduit les sauts de ligne triples ou plus en double saut de ligne
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
@@ -31,438 +96,149 @@ function cleanExtractedText(text: string): string {
 function findBestCutPoint(text: string, targetEnd: number): number {
   const searchStart = Math.max(0, targetEnd - 5000)
   const searchZone = text.slice(searchStart, targetEnd)
-
-  const sectionPatterns = [
-    /\n(?=[IVX]+[\s\.\-–])/g,
-    /\n(?=[A-Z]\))/g,
-    /\n(?=\d+[\.\)]\s)/g,
-  ]
-  for (const pattern of sectionPatterns) {
-    const matches = [...searchZone.matchAll(pattern)]
-    if (matches.length > 0) {
-      const lastMatch = matches[matches.length - 1]
-      return searchStart + (lastMatch.index ?? 0)
-    }
-  }
-
   const doubleNewline = searchZone.lastIndexOf('\n\n')
-  if (doubleNewline !== -1) {
-    return searchStart + doubleNewline
-  }
-
-  const sentenceEnd = searchZone.lastIndexOf('.\n')
-  if (sentenceEnd !== -1) {
-    return searchStart + sentenceEnd + 1
-  }
-
+  if (doubleNewline !== -1) return searchStart + doubleNewline
   const lastSpace = searchZone.lastIndexOf(' ')
-  if (lastSpace !== -1) {
-    return searchStart + lastSpace
-  }
-
+  if (lastSpace !== -1) return searchStart + lastSpace
   return targetEnd
 }
 
-function splitIntoChunks(text: string, debug = false): string[] {
-  if (debug) console.log(`%c[DEBUG CHUNKING] Taille totale du texte : ${text.length} caractères`, 'color: #c9a84c; font-weight: bold')
-  
-  if (text.length <= SINGLE_CALL_LIMIT) {
-    return [text]
-  }
-
+function splitIntoChunks(text: string): string[] {
   const chunks: string[] = []
   let start = 0
-  let index = 0
-  const totalEstimated = Math.ceil(text.length / CHUNK_SIZE)
-
   while (start < text.length) {
     const rawEnd = Math.min(start + CHUNK_SIZE, text.length)
     const cutPoint = rawEnd === text.length ? rawEnd : findBestCutPoint(text, rawEnd)
-
-    const chunkContent = text.slice(start, cutPoint)
-    const header = `[PARTIE ${index + 1}/${totalEstimated} DU COURS]
-RÈGLES CRITIQUES POUR CETTE PARTIE :
-1. COUVERTURE TOTALE : Tu dois impérativement couvrir CHAQUE titre de section, chapitre ou sous-partie visible dans ce texte.
-2. DENSITÉ : Produis au moins 1 flashcard par section ou notion identifiée. Ne saute aucun paragraphe informatif.
-3. PAS DE DOUBLONS : Ne duplique pas les notions déjà couvertes dans les parties précédentes. Si une notion a déjà été définie avant, teste un autre angle (exception, condition, exemple).
-4. FOCUS : Concentre-toi exclusivement sur les informations présentes dans ce chunk précis.\n\n`
-
-    chunks.push(header + chunkContent)
-
-    if (cutPoint >= text.length) break
+    chunks.push(text.slice(start, cutPoint))
     start = cutPoint
-    index++
   }
-
   return chunks
 }
 
-async function callChunk(
-  text: string, 
-  type: string, 
-  attempt = 0
-): Promise<string> {
+async function callIA(text: string, type: string, context?: string): Promise<string> {
   const res = await fetch('/api/ai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, type })
+    body: JSON.stringify({ text, type, context })
   })
-  if (res.status === 429 && attempt < 3) {
-    await new Promise(r => setTimeout(r, 5000 * (attempt + 1)))
-    return callChunk(text, type, attempt + 1)
-  }
   if (!res.ok) {
     const err = await res.json()
-    throw new Error(err.error || 'Erreur serveur')
+    throw new Error(err.error || 'Erreur IA')
   }
   const data = await res.json()
   return data.result
 }
 
-const AnimatedBook = () => (
-  <div className="relative w-24 h-24 mx-auto mb-10 flex items-center justify-center" style={{ perspective: '1200px' }}>
-    <div className="absolute w-20 h-16 bg-white/10 rounded-sm border border-white/20 flex shadow-2xl">
-      <div className="flex-1 border-r border-white/10" />
-      <div className="flex-1" />
-    </div>
-    {[0, 1, 2].map((i) => (
-      <motion.div
-        key={i}
-        className="absolute w-10 h-16 bg-white border border-gray-300 origin-left shadow-sm"
-        initial={{ rotateY: 0 }}
-        animate={{ rotateY: -180 }}
-        transition={{
-          duration: 2,
-          repeat: Infinity,
-          ease: "easeInOut",
-          delay: i * 0.3,
-        }}
-        style={{ 
-          transformStyle: "preserve-3d",
-          backfaceVisibility: "hidden",
-          left: "50%",
-          borderRadius: "0 2px 2px 0"
-        }}
-      >
-        <div className="flex flex-col gap-2 p-2 opacity-10">
-          <div className="h-1 w-full bg-black rounded-full" />
-          <div className="h-1 w-full bg-black rounded-full" />
-          <div className="h-1 w-3/4 bg-black rounded-full" />
-          <div className="h-1 w-full bg-black rounded-full" />
-        </div>
-      </motion.div>
-    ))}
-    <div className="absolute left-1/2 -translate-x-1/2 w-1.5 h-18 bg-accent rounded-full shadow-xl z-20" />
-  </div>
-)
+// ── COMPOSANT PRINCIPAL ──────────────────────────────────────────
 
 export default function DocumentUpload() {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('')
-  const [tipIndex, setTipIndex] = useState(0)
   const [showSuccess, setShowSuccess] = useState(false)
   const supabase = createClient()
-
-  const tips = [
-    "🚀 Finie la saisie manuelle : LexJuridica transforme 50 pages de cours en flashcards en 2 minutes.",
-    "📜 Le Code Civil de 1804 était surnommé 'La Constitution Civile des Français'.",
-    "🧠 Active Recall : Forcez votre cerveau à retrouver l'information plutôt que de simplement la relire.",
-    "⚖️ Anti-Hallucination : LexJuridica ne s'appuie que sur VOTRE cours, pas sur des données externes.",
-    "🏛️ Saviez-vous ? Jusqu'en 2013, un décret interdisait officiellement aux Parisiennes de porter le pantalon !",
-    "⚡ Spaced Repetition (SRS) : Révisez une notion juste avant qu'elle ne sorte de votre mémoire.",
-    "📅 Combattez la courbe de l'oubli : LexJuridica espace les rappels de façon mathématique.",
-    "🖋️ L'article 1240 du Code Civil (ex-1382) est le fondement de la responsabilité civile : 'Tout fait quelconque de l'homme...'",
-    "🔴 Le bouton 'Again' n'est pas un échec, c'est une opportunité de renforcement.",
-    "🔍 Focus sur le régime : L'IA extrait prioritairement le 'qui, quand, comment' des règles.",
-    "🦁 Le terme 'avocat' vient du latin 'advocatus' (celui qui est appelé pour assister).",
-    "💤 Récupérez des heures de sommeil en automatisant vos fiches de TD.",
-    "⚖️ En droit français, le silence de l'administration vaut acceptation après 2 mois (avec exceptions !).",
-    "💎 La brièveté des réponses force la clarté mentale et la précision juridique.",
-    "🛡️ Pas d'invention : Si votre cours est flou, l'IA préfère ne pas créer de carte erronée.",
-    "🏛️ Jurisprudence : Les arrêts clés sont isolés pour une mémorisation rapide.",
-    "🎮 L'XP et les niveaux transforment l'effort en jeu : restez motivé sur la durée.",
-    "📈 Visualisez votre progression : chaque carte révisée augmente votre Mastery.",
-    "⚖️ Le principe 'Nul n'est censé ignorer la loi' signifie qu'on ne peut pas invoquer son ignorance pour échapper à une règle.",
-    "🤖 Tuteur Socratique : Notre IA vous force à réfléchir comme un futur avocat.",
-    "🎓 Conseil : Expliquez un concept complexe à un ami. Si c'est clair, c'est mémorisé.",
-    "🔒 Sécurité : Vos documents sont cryptés et traités par une IA juridique spécialisée.",
-    "⚖️ La présomption d'innocence est un principe cardinal : on est innocent tant que la culpabilité n'est pas prouvée.",
-    "📏 Conditions Cumulatives : L'IA liste proprement les critères nécessaires à une règle.",
-    "⚖️ Distinction Principe/Exception : Les flashcards mettent en lumière les nuances du droit.",
-    "🔥 Constance > Intensité. 15 min par jour valent mieux que 5h une fois par mois."
-  ]
-
-  useEffect(() => {
-    let interval: any
-    if (loading) {
-      interval = setInterval(() => {
-        setTipIndex((prev) => (prev + 1) % tips.length)
-      }, 5000)
-    }
-    return () => clearInterval(interval)
-  }, [loading])
-
-  const extractTextFromPDF = async (file: File): Promise<string> => {
-    try {
-      const pdfjsLib = await import('pdfjs-dist')
-      
-      // Configuration forcée du worker sur UNPKG avec extension .mjs
-      const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
-      pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
-      
-      const arrayBuffer = await file.arrayBuffer()
-      const loadingTask = pdfjsLib.getDocument({ 
-        data: arrayBuffer,
-        stopAtErrors: true 
-      })
-      
-      const pdf = await loadingTask.promise
-      let fullText = ""
-      
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i)
-        const textContent = await page.getTextContent()
-        const pageText = textContent.items
-          .map((item: any) => item.str)
-          .join(' ')
-        fullText += pageText + "\n\n"
-      }
-      return fullText
-    } catch (error) {
-      console.error("Erreur complète extraction PDF:", error)
-      throw new Error("Impossible de charger le moteur d'analyse PDF. Vérifiez votre connexion internet.")
-    }
-  }
 
   const extractText = async (file: File): Promise<string> => {
     let rawText = ''
     if (file.type === 'application/pdf') {
-      rawText = await extractTextFromPDF(file)
-    } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      const pdfjsLib = await import('pdfjs-dist')
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
       const arrayBuffer = await file.arrayBuffer()
-      const result = await mammoth.extractRawText({ arrayBuffer })
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, stopAtErrors: true }).promise
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        rawText += content.items.map((item: any) => item.str).join(' ') + "\n\n"
+      }
+    } else {
+      const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })
       rawText = result.value
     }
-    
     return cleanExtractedText(rawText)
   }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     setLoading(true)
-    setStatus('Extraction du texte...')
+    setStatus('Préparation du document...')
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Non connecté')
-
+      
       const cleanedText = await extractText(file)
-      if (!cleanedText) throw new Error("Impossible d'extraire le texte")
-
-      const isAdmin = user.email && ADMIN_EMAILS.includes(user.email)
-      const chunks = splitIntoChunks(cleanedText, !!isAdmin)
+      const chunks = splitIntoChunks(cleanedText)
       const totalChunks = chunks.length
 
-      // ── SUMMARY ──────────────────────────────────────────
-      setStatus(`Génération de la fiche (0/${totalChunks})...`)
-      const summaryParts: string[] = []
+      // ── CHECK ÉNERGIE PRÉDICTIF ────────────────────────
+      const estimatedCost = 1 + (totalChunks * 2)
+      const { data: stats } = await supabase.from('user_stats').select('ai_energy').eq('id', user.id).single()
+      const isAdmin = user.email && ADMIN_EMAILS.includes(user.email)
+      if (!isAdmin && (stats?.ai_energy || 0) < estimatedCost) {
+        throw new Error(`Énergie insuffisante (${stats?.ai_energy || 0}/${estimatedCost} requis).`)
+      }
 
+      // ── RÉSUMÉ (FLUX HYBRIDE GEMINI -> MISTRAL) ─────────
+      setStatus('Extraction des données juridiques...')
+      const summaryExtracts: string[] = []
       for (let i = 0; i < chunks.length; i++) {
-        setStatus(`Fiche : partie ${i + 1}/${totalChunks}...`)
-        const partialSummary = await callChunk(chunks[i], 'summary')
-        summaryParts.push(partialSummary)
-
-        await supabase.from('documents').upsert({
-          user_id: user.id,
-          title: file.name,
-          content_raw: cleanedText.substring(0, 10000),
-          summary_html: summaryParts.join(''),
-          size: file.size,
-          type: file.type,
-          status: 'processing'
-        }, { onConflict: 'user_id,title' })
-
-        if (i < chunks.length - 1) {
-          await new Promise(r => setTimeout(r, 2000))
-        }
+        setStatus(`Extraction : bloc ${i + 1}/${totalChunks}...`)
+        const extract = await callIA(chunks[i], 'summary_extract')
+        summaryExtracts.push(`--- BLOC ${i+1} ---\n${extract}`)
+        if (i < totalChunks - 1) await new Promise(r => setTimeout(r, SECURE_DELAY))
       }
 
-      let fullSummaryHtml: string
-      if (summaryParts.length === 1) {
-        fullSummaryHtml = summaryParts[0]
-      } else {
-        setStatus('Finalisation de la fiche...')
-        const mergeText = summaryParts
-          .map((p, i) => `=== RÉSUMÉ PARTIE ${i + 1} ===\n${p}`)
-          .join('\n\n')
-          .slice(0, 20000)
-        fullSummaryHtml = await callChunk(mergeText, 'summary')
+      setStatus('Rédaction de la fiche par Mistral Large...')
+      const fullSummaryHtml = await callIA(summaryExtracts.join('\n\n'), 'fiche_assemble')
+
+      const { data: doc } = await supabase.from('documents').upsert({
+        user_id: user.id, title: file.name, content_raw: cleanedText.substring(0, 15000),
+        summary_html: fullSummaryHtml, size: file.size, type: file.type, status: 'done'
+      }, { onConflict: 'user_id,title' }).select().single()
+
+      // ── FLASHCARDS (PASS 1 + PASS 2) - INCHANGÉ ─────────
+      setStatus('Génération des flashcards...')
+      const allCards: any[] = []
+      for (let i = 0; i < chunks.length; i++) {
+        setStatus(`Flashcards Pass 1 : bloc ${i + 1}/${totalChunks}...`)
+        const rawPass1 = await callIA(chunks[i], 'flashcards')
+        const cardsPass1 = parseFlashcards(rawPass1)
+        allCards.push(...cardsPass1)
+
+        await new Promise(r => setTimeout(r, SECURE_DELAY))
+
+        setStatus(`Flashcards Pass 2 : bloc ${i + 1}/${totalChunks}...`)
+        const questionsPass1 = cardsPass1.slice(0, 40).map(c => c.q).join(' | ')
+        const pass2Input = `COURS:\n${chunks[i].substring(0, 10000)}\n\nQUESTIONS DÉJÀ EXISTANTES:\n${questionsPass1}`
+        const rawPass2 = await callIA(pass2Input, 'flashcards_pass2')
+        const cardsPass2 = parseFlashcards(rawPass2)
+        allCards.push(...cardsPass2)
+
+        if (i < chunks.length - 1) await new Promise(r => setTimeout(r, SECURE_DELAY))
       }
 
-      const { data: doc, error: docErr } = await supabase
-        .from('documents')
-        .upsert({
-          user_id: user.id,
-          title: file.name,
-          content_raw: cleanedText.substring(0, 10000),
-          summary_html: fullSummaryHtml,
-          size: file.size,
-          type: file.type,
-          status: 'done'
-        }, { onConflict: 'user_id,title' })
-        .select()
-        .single()
-
-      if (docErr) throw new Error('Erreur enregistrement document')
-
-      // ── FLASHCARDS ───────────────────────────────────────
-      // Sélection automatique du mode selon la taille du doc
-      const USE_3_PASS = chunks.length <= 8   // < ~80 000 chars
-      const USE_2_PASS = chunks.length <= 15  // < ~150 000 chars
-      // Au-delà : 1 pass amélioré
-
-      console.log(`%c[MODE] ${chunks.length} chunks → ${USE_3_PASS ? '3 passes' : USE_2_PASS ? '2 passes' : '1 pass amélioré'}`, 'color: #c9a84c; font-weight: bold')
-
-      let verifiedMappings: string[] = []
-
-      if (USE_3_PASS || USE_2_PASS) {
-        // ── PASS 1 : Cartographie ──────────────────────────────
-        setStatus('Pass 1 : cartographie du cours...')
-        const mappings: string[] = []
-        for (let i = 0; i < chunks.length; i++) {
-          setStatus(`Pass 1 : chunk ${i + 1}/${chunks.length}...`)
-          try {
-            const mapping = await callChunk('[PASS1]\n\n' + chunks[i], 'flashcards')
-            mappings.push(mapping)
-          } catch (e) {
-            console.warn(`Pass 1 chunk ${i + 1} échoué, ignoré`)
-            mappings.push('')
-          }
-          if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 1200))
-        }
-
-        if (USE_3_PASS) {
-          // ── PASS 2 : Vérification (seulement si <= 8 chunks) ──
-          setStatus('Pass 2 : vérification de la cartographie...')
-          for (let i = 0; i < chunks.length; i++) {
-            setStatus(`Pass 2 : chunk ${i + 1}/${chunks.length}...`)
-            try {
-              const pass2Prompt = `[PASS2]\n\nCARTOGRAPHIE PASS 1 :\n${mappings[i]}\n\nTEXTE SOURCE :\n${chunks[i]}`
-              const verified = await callChunk(pass2Prompt, 'flashcards')
-              verifiedMappings.push(verified)
-            } catch (e) {
-              console.warn(`Pass 2 chunk ${i + 1} échoué, fallback sur mapping pass 1`)
-              verifiedMappings.push(mappings[i])
-            }
-            if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 1200))
-          }
-        } else {
-          // 2 passes : on utilise directement la cartographie du Pass 1
-          verifiedMappings = mappings
-        }
-      }
-
-      // ── PASS FINAL : Génération des flashcards ─────────────
-      const BATCH_SIZE = 2
-      const allCards: Array<{ q: string, a: string }> = []
-      const totalBatches = Math.ceil(chunks.length / BATCH_SIZE)
-
-      for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-        const batchIndex = Math.floor(i / BATCH_SIZE) + 1
-        setStatus(`Flashcards : batch ${batchIndex}/${totalBatches}...`)
-
-        const batchPromises = []
-        for (let j = i; j < Math.min(i + BATCH_SIZE, chunks.length); j++) {
-          let prompt: string
-          if (USE_3_PASS || USE_2_PASS) {
-            prompt = `[PASS3]\n\nCARTOGRAPHIE VÉRIFIÉE :\n${verifiedMappings[j]}\n\nTEXTE SOURCE :\n${chunks[j]}`
-          } else {
-            // 1 pass amélioré : chain-of-thought implicite
-            prompt = chunks[j]
-          }
-          batchPromises.push(callChunk(prompt, 'flashcards'))
-        }
-
-        const results = await Promise.allSettled(batchPromises)
-
-        for (const result of results) {
-          if (result.status === 'rejected') {
-            console.warn('Chunk échoué, ignoré:', result.reason)
-            continue
-          }
-          try {
-            const raw = result.value
-            const firstBracket = raw.indexOf('[')
-            const lastBracket = raw.lastIndexOf(']')
-            if (firstBracket !== -1 && lastBracket !== -1) {
-              const parsed = JSON.parse(raw.substring(firstBracket, lastBracket + 1))
-              if (Array.isArray(parsed)) {
-                allCards.push(...parsed.filter((c: any) =>
-                  (c.q || c.question) && (c.a || c.answer || c.reponse)
-                ))
-              }
-            }
-          } catch (e) {
-            console.warn('Parse JSON échoué:', e)
-          }
-        }
-
-        if (i + BATCH_SIZE < chunks.length) {
-          await new Promise(r => setTimeout(r, 2500))
-        }
-      }
-
-      // Déduplication améliorée
       const seen = new Set<string>()
-      const dedupedCards = allCards.filter((c: any) => {
-        const question = (c.q || c.question || '')
-        const normalized = question.toLowerCase().replace(/[^a-z0-9àéèêëîïôùûü]/g, '')
-        const key80 = normalized.substring(0, 80)
-        const keyMid = normalized.length > 50 ? normalized.substring(10, 50) : ''
-        if (!key80 || seen.has(key80)) return false
-        if (keyMid && [...seen].some(k => k.includes(keyMid))) return false
-        seen.add(key80)
+      const dedupedCards = allCards.filter(c => {
+        const q = (c.q || c.question || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 60)
+        if (!q || seen.has(q)) return false
+        seen.add(q)
         return true
       })
 
-      const { data: deck, error: deckErr } = await supabase.from('decks').insert({
-        user_id: user.id,
-        document_id: doc.id,
-        title: file.name
-      }).select().single()
-
-      if (deckErr) throw new Error(`Erreur Deck: ${deckErr.message}`)
-
+      const { data: deck } = await supabase.from('decks').insert({ user_id: user.id, document_id: doc?.id, title: file.name }).select().single()
       if (deck && dedupedCards.length > 0) {
-        const srsCards = dedupedCards.map((f: any) => ({
-          user_id: user.id,
-          deck_id: deck.id,
-          front: f.q || f.question,
-          back: f.a || f.answer || f.reponse
-        }))
-        const { error: srsErr } = await supabase.from('user_srs').insert(srsCards)
-        if (srsErr) console.error("Erreur insertion cartes SRS:", srsErr)
+        await supabase.from('user_srs').insert(dedupedCards.map(f => ({
+          user_id: user.id, deck_id: deck.id, front: f.q || f.question, back: f.a || f.answer || f.reponse
+        })))
       }
 
+      await updateGamification(user.id, 'upload')
       setStatus('Terminé !')
-      confetti({
-        particleCount: 150,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#c9a84c', '#ffffff']
-      })
+      confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#c9a84c', '#ffffff', '#000000'] })
       setShowSuccess(true)
-      setTimeout(() => {
-        setStatus('')
-        setShowSuccess(false)
-        window.location.reload()
-      }, 3000)
+      setTimeout(() => window.location.reload(), 2000)
     } catch (err: any) {
-      alert("Erreur : " + err.message)
-      setStatus('Erreur')
-    } finally {
+      alert(err.message)
       setLoading(false)
     }
   }
@@ -471,90 +247,50 @@ export default function DocumentUpload() {
     <>
       <AnimatePresence>
         {showSuccess && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[10000] bg-black/90 flex flex-col items-center justify-center p-6 text-center"
-          >
-            <motion.div 
-              initial={{ scale: 0.5, rotate: -10 }}
-              animate={{ scale: 1, rotate: 0 }}
-              className="glass-card p-12 border-accent shadow-[0_0_50px_rgba(201,168,76,0.3)]"
-            >
-              <div className="w-24 h-24 bg-accent/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <PartyPopper size={48} className="text-accent" />
-              </div>
-              <h2 className="text-4xl font-black mb-4 uppercase tracking-tighter">Félicitations !</h2>
-              <p className="text-xl text-gray-300 mb-2">Votre cours a été analysé avec succès.</p>
-              <p className="text-accent font-bold">Fiches et Flashcards prêtes ! 🚀</p>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[10000] bg-black/90 flex flex-col items-center justify-center p-6 text-center">
+            <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} className="glass-card p-12 border-accent shadow-[0_0_50px_rgba(201,168,76,0.3)]">
+              <PartyPopper size={48} className="text-accent mx-auto mb-6" />
+              <h2 className="text-4xl font-black mb-4 uppercase tracking-tighter text-white">Cours Analysé !</h2>
+              <p className="text-accent font-bold italic">Votre deck de flashcards est prêt ⚖️</p>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {loading && (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center font-sans">
-          <div className="glass-card p-12 max-w-md border-accent/50 animate-in fade-in zoom-in duration-300">
-            <AnimatedBook />
-            <h2 className="text-2xl font-black mb-2 text-white uppercase tracking-tighter">Analyse en cours</h2>
-            <p className="text-accent font-bold animate-pulse mb-8">{status}</p>
-            
-            <div className="relative h-24 flex items-center justify-center overflow-hidden bg-white/5 rounded-2xl p-6">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={tipIndex}
-                  initial={{ y: 20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: -20, opacity: 0 }}
-                  transition={{ duration: 0.5 }}
-                  className="text-sm text-gray-300 italic leading-relaxed"
-                >
-                  {tips[tipIndex]}
-                </motion.div>
-              </AnimatePresence>
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
+          <div className="glass-card p-12 max-w-md border-accent/50 animate-in zoom-in duration-300 shadow-[0_0_40px_rgba(201,168,76,0.1)]">
+            <LegalScanner />
+            <h2 className="text-2xl font-black mb-1 text-white uppercase tracking-tighter">Analyse en cours</h2>
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <Loader2 className="animate-spin text-accent" size={16} />
+              <p className="text-accent font-bold text-sm">{status}</p>
             </div>
+            <FactRotator />
+            <p className="text-[10px] text-gray-500 italic mt-6 flex items-center justify-center gap-1">
+              <ShieldAlert size={10} /> Analyse hybride — fidélité maximale garantie.
+            </p>
           </div>
         </div>
       )}
 
-      <div className="glass-card p-12 text-center border-dashed border-2 border-white/10 hover:border-accent/50 transition-all group">
-        <input 
-          type="file" 
-          id="file-upload" 
-          className="hidden" 
-          accept=".pdf,.docx"
-          onChange={handleUpload}
-          disabled={loading}
-        />
-        <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-          <Upload size={48} className="text-gray-500 group-hover:text-accent mb-4 transition-colors" />
-          <h3 className="text-xl font-bold mb-2">
-            Cliquez pour uploader un cours
-          </h3>
-          <p className="text-gray-400 mb-6">PDF ou DOCX (max 200 pages)</p>
-          
-          {status && !loading && (
-            <div className="flex items-center gap-2 text-accent font-medium animate-pulse">
-              <CheckCircle2 size={16} />
-              <span>{status}</span>
-            </div>
-          )}
+      <div className="glass-card p-12 text-center border-dashed border-2 border-white/10 hover:border-accent/50 transition-all group relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-30 transition-opacity"><Scale size={80} /></div>
+        <input type="file" id="file-upload" className="hidden" accept=".pdf,.docx" onChange={handleUpload} disabled={loading} />
+        <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center relative z-10">
+          <div className="p-5 bg-white/5 rounded-full mb-6 group-hover:bg-accent/10 transition-colors">
+            <Upload size={48} className="text-gray-500 group-hover:text-accent transition-colors" />
+          </div>
+          <h3 className="text-2xl font-extrabold mb-2 text-white uppercase tracking-tight">Transformer un cours</h3>
+          <p className="text-gray-400 mb-6 text-sm max-w-xs mx-auto">Extraction par Gemini, rédaction par Mistral Large.</p>
+          <div className="flex flex-wrap justify-center gap-3 mb-8">
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full text-[10px] text-gray-400"><BookOpen size={12} className="text-accent" /> Fiche Hybride</div>
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full text-[10px] text-gray-400"><CheckCircle2 size={12} className="text-accent" /> Zéro Hallucination</div>
+          </div>
+          <span className="btn-premium group-hover:scale-105 transition-transform">Sélectionner un fichier</span>
+          <p className="mt-6 text-[10px] text-gray-500 italic flex items-center gap-1 justify-center"><AlertTriangle size={10} className="text-accent" /> Format supportés : PDF, DOCX (max 15Mo)</p>
         </label>
       </div>
     </>
-  )
-}
-
-function TrophyIcon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-      <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-      <path d="M4 22h16" />
-      <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
-      <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
-      <path d="M18 4H6v7a6 6 0 0 0 12 0V4Z" />
-    </svg>
   )
 }

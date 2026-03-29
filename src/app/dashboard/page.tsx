@@ -4,12 +4,14 @@ import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/Sidebar'
 import UserStatusBar from '@/components/UserStatusBar'
 import DocumentUpload from '@/components/DocumentUpload'
-import { FileText, ChevronRight, Clock, Star, Upload } from 'lucide-react'
+import { FileText, ChevronRight, Clock, Star, Upload, Target, CheckCircle2, Zap, Trophy } from 'lucide-react'
 import Link from 'next/link'
+import { updateGamification } from '@/lib/gamification'
 
 export default function DashboardPage() {
   const [recentDocs, setRecentDocs] = useState<any[]>([])
   const [stats, setStats] = useState<any>(null)
+  const [quests, setQuests] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [totalCards, setTotalCards] = useState(0)
   const supabase = createClient()
@@ -39,16 +41,24 @@ export default function DashboardPage() {
         .eq('id', user.id)
         .single()
 
-      // Count actual cards in SRS
-      const { count } = await supabase
-        .from('user_srs')
-        .select('*', { count: 'exact', head: true })
+      // Fetch Quests
+      const { data: userQuests } = await supabase
+        .from('user_quests')
+        .select('*')
         .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
 
-      setTotalCards(count || 0)
-      setRecentDocs(docs || [])
-      setStats(userStats)
-      setLoading(false)
+      if (!userQuests || userQuests.length === 0) {
+        await supabase.rpc('initialize_daily_quests', { uid: user.id })
+        const { data: reFetched } = await supabase
+          .from('user_quests')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true })
+        setQuests(reFetched || [])
+      } else {
+        setQuests(userQuests)
+      }
 
       // Increment focus minutes every 60 seconds
       focusInterval = setInterval(async () => {
@@ -64,6 +74,9 @@ export default function DashboardPage() {
           .from('user_stats')
           .update({ focus_minutes: newMinutes })
           .eq('id', user.id)
+        
+        // Gamification update (Quests)
+        await updateGamification(user.id, 'focus')
         
         setStats((prev: any) => prev ? { ...prev, focus_minutes: newMinutes } : prev)
       }, 60000)
@@ -81,7 +94,7 @@ export default function DashboardPage() {
       <main className="flex-1 md:ml-64 p-4 md:p-8 pb-24 md:pb-8 transition-all">
         <div className="max-w-6xl mx-auto">
           <header className="mb-10">
-            <h1 className="text-4xl font-extrabold mb-2">Tableau de Bord</h1>
+            <h1 className="text-4xl font-extrabold mb-2 text-white">Tableau de Bord</h1>
             <p className="text-gray-400">Prêt pour votre session de révision juridique ?</p>
           </header>
 
@@ -89,6 +102,64 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-12">
             <div className="lg:col-span-2 space-y-8">
+              {/* Daily Quests Section */}
+              <section className="glass-card p-6 border-accent/20 bg-accent/5">
+                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                  <Target size={20} className="text-accent" />
+                  Objectifs du Jour
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {quests.length === 0 ? (
+                    <div className="col-span-3 text-center py-4 text-gray-500 italic">
+                      Aucun objectif actif. Réinitialisation à minuit.
+                    </div>
+                  ) : (
+                    quests.map(quest => (
+                      <div key={quest.id} className={`p-4 rounded-xl border transition-all ${quest.completed ? 'bg-green-500/10 border-green-500/50' : 'bg-white/5 border-white/10'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${quest.completed ? 'bg-green-500 text-black' : 'bg-accent text-black'}`}>
+                            {quest.completed ? 'Terminé' : `+${quest.xp_reward} XP`}
+                          </span>
+                          {quest.completed && <CheckCircle2 size={16} className="text-green-500" />}
+                        </div>
+                        <div className="text-xs font-bold mb-3">{quest.title}</div>
+                        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full transition-all duration-500 ${quest.completed ? 'bg-green-500' : 'bg-accent'}`}
+                            style={{ width: `${Math.min(100, (quest.current_count / quest.target_count) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="mt-2 text-[10px] text-gray-500 text-right font-mono">
+                          {quest.current_count} / {quest.target_count}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              {/* IA Duel / Challenge Section */}
+              <section className="p-8 glass-card bg-indigo-500/10 border-indigo-500/30 relative overflow-hidden group">
+                <div className="relative z-10">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-indigo-500 rounded-lg text-white">
+                      <Zap size={20} fill="white" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">Duel contre l'IA</h2>
+                  </div>
+                  <p className="text-indigo-200 mb-6 max-w-md">
+                    Affrontez l'IA sur un cas pratique généré à partir de vos cours. 
+                    60 secondes pour convaincre le jury !
+                  </p>
+                  <Link href="/challenge" className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold transition-all hover:scale-105 active:scale-95 shadow-lg shadow-indigo-500/20">
+                    Lancer le Duel <ChevronRight size={18} />
+                  </Link>
+                </div>
+                <div className="absolute -bottom-6 -right-6 text-indigo-500/10 transform rotate-12 group-hover:scale-110 transition-transform">
+                  <Zap size={180} fill="currentColor" />
+                </div>
+              </section>
+
               <section>
                 <div className="flex justify-between items-end mb-4">
                   <h2 className="text-xl font-bold flex items-center gap-2">
@@ -143,7 +214,7 @@ export default function DashboardPage() {
                   </Link>
                 </div>
                 <div className="absolute top-0 right-0 p-8 text-accent/10 transform translate-x-1/4 -translate-y-1/4 scale-150">
-                  <Trophy size={120} />
+                  <TrophyIcon size={120} />
                 </div>
               </section>
             </div>
@@ -184,7 +255,7 @@ export default function DashboardPage() {
   )
 }
 
-function Trophy({ size }: { size: number }) {
+function TrophyIcon({ size }: { size: number }) {
   return (
     <svg 
       width={size} 

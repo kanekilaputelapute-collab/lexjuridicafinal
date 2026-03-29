@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Zap, Award } from 'lucide-react'
+import { Zap, Award, Flame } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 export default function UserStatusBar() {
@@ -17,6 +17,10 @@ export default function UserStatusBar() {
     
     setXpData(xp)
     setStats(st)
+
+    if (st) {
+      console.log(`%c[LexJuridica] ⚡ Énergie IA : ${st.ai_energy}/40 crédits restants. Chaque demande d'IA consomme 1 crédit.`, "color: #fbbf24; font-weight: bold;");
+    }
   }
 
   useEffect(() => {
@@ -34,7 +38,7 @@ export default function UserStatusBar() {
   const progress = (xpData.total_xp % 1000) / 10
 
   return (
-    <div className="flex gap-6 items-center p-4 glass-card mb-8 animate-in slide-in-from-top duration-500">
+    <div className="flex flex-wrap gap-4 md:gap-6 items-center p-4 glass-card mb-8 animate-in slide-in-from-top duration-500">
       <div className="flex items-center gap-3">
         <div className="p-2 bg-accent/20 rounded-lg text-accent">
           <Award size={24} />
@@ -45,7 +49,15 @@ export default function UserStatusBar() {
         </div>
       </div>
 
-      <div className="flex-1">
+      <div className="flex items-center gap-2 px-4 md:px-6 border-l border-white/10">
+        <Flame size={20} className={stats.streak_days > 0 ? 'text-orange-500' : 'text-gray-600'} />
+        <div>
+          <div className="text-xs text-gray-400">Série</div>
+          <div className="font-bold">{stats.streak_days || 0} j.</div>
+        </div>
+      </div>
+
+      <div className="flex-1 min-w-[150px]">
         <div className="flex justify-between text-xs mb-1">
           <span>{xpData.total_xp} XP</span>
           <span>{xpData.level * 1000} XP</span>
@@ -58,7 +70,7 @@ export default function UserStatusBar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 px-6 border-l border-white/10">
+      <div className="flex items-center gap-3 px-4 md:px-6 border-l border-white/10">
         <Zap size={20} className={stats.ai_energy > 10 ? 'text-yellow-400' : 'text-red-400'} />
         <div>
           <div className="text-xs text-gray-400">Énergie IA</div>
