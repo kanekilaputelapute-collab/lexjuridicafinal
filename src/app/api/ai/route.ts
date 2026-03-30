@@ -134,7 +134,8 @@ export async function POST(req: Request) {
       const keys = [
         process.env.GOOGLE_GEMINI_API_KEY,
         process.env.GOOGLE_GEMINI_API_KEY_1,
-        process.env.GOOGLE_API_KEY
+        process.env.GOOGLE_API_KEY,
+        process.env.GEMINI_API_KEY
       ].map(k => k?.trim()).filter(Boolean) as string[]
       
       if (keys.length === 0) {
