@@ -145,14 +145,15 @@ export async function POST(req: Request) {
 
       const selected = keysObj[Math.floor(Math.random() * keysObj.length)]
       const geminiKey = selected.val!.trim()
+      const varName = selected.name
       
-      console.log(`[DEBUG] Variable: ${selected.name} | Key: ${geminiKey.substring(0, 4)}...${geminiKey.substring(geminiKey.length - 4)}`)
-      const models = ["models/gemini-3.1-flash-lite-preview", "models/gemini-1.5-flash-latest"]
+      console.log(`[DEBUG] Variable: ${varName} | Key: ${geminiKey.substring(0, 4)}...${geminiKey.substring(geminiKey.length - 4)}`)
+      const models = ["models/gemini-2.0-flash", "models/gemini-1.5-flash-latest"]
       let lastError = ""
 
       for (const model of models) {
         let attempts = 0
-        const maxAttempts = 3
+        const maxAttempts = 2
 
         while (attempts < maxAttempts) {
           try {
@@ -173,8 +174,9 @@ export async function POST(req: Request) {
             const geminiData = await geminiRes.json()
             if (geminiData.error) {
               const msg = geminiData.error.message
+              lastError = `[${varName}] ${msg}`
               if (msg.includes("high demand") || msg.includes("503") || msg.includes("429")) {
-                attempts++; lastError = msg
+                attempts++;
                 await new Promise(r => setTimeout(r, 2000 * attempts))
                 continue
               }
@@ -182,11 +184,14 @@ export async function POST(req: Request) {
             }
             responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text
             if (responseText) break
-          } catch (e: any) { lastError = e.message; attempts++ }
+          } catch (e: any) { 
+            lastError = `[${varName}] ${e.message}`
+            attempts++ 
+          }
         }
         if (responseText) break
       }
-      if (!responseText) throw new Error(`Google saturé. Dernière erreur : ${lastError}`)
+      if (!responseText) throw new Error(`Google saturé ou Clé invalide. Dernière erreur : ${lastError}`)
     }
 
     if (!responseText) throw new Error("IA muette")
