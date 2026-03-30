@@ -147,7 +147,6 @@ export default function DocumentUpload() {
   const extractText = async (file: File): Promise<string> => {
     let rawText = ''
 
-    // Polyfill pour file.arrayBuffer() (vieux navigateurs mobiles)
     const getBuffer = async (f: File): Promise<ArrayBuffer> => {
       if (f.arrayBuffer) return await f.arrayBuffer()
       return new Promise((resolve, reject) => {
@@ -159,24 +158,35 @@ export default function DocumentUpload() {
     }
 
     if (file.type === 'application/pdf') {
+      setStatus('Chargement du moteur PDF...')
       const pdfjsLib = await import('pdfjs-dist')
-      // Utilisation du worker legacy plus compatible ou extension .mjs pour v5+
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
+      // Utilisation du build legacy pour une compatibilité maximale sur mobile
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`
+      
+      setStatus('Lecture du fichier...')
       const arrayBuffer = await getBuffer(file)
+      
+      setStatus('Décodage du PDF...')
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, stopAtErrors: true }).promise
-      for (let i = 1; i <= pdf.numPages; i++) {
+      const total = pdf.numPages
+      
+      for (let i = 1; i <= total; i++) {
         if (isCancelled.current) throw new Error('CANCELED')
+        setStatus(`Lecture page ${i}/${total}...`)
         const page = await pdf.getPage(i)
         const content = await page.getTextContent()
-        // Protection contre items non-existants
         const items = content.items || []
         rawText += items.map((item: any) => item.str || '').join(' ') + "\n\n"
       }
     } else {
+      setStatus('Chargement du moteur Word...')
+      const mammoth = await import('mammoth')
+      setStatus('Lecture du fichier...')
       const arrayBuffer = await getBuffer(file)
       const result = await mammoth.extractRawText({ arrayBuffer })
       rawText = result.value
     }
+    setStatus('Nettoyage du texte...')
     return cleanExtractedText(rawText)
   }
 
