@@ -136,10 +136,10 @@ export async function POST(req: Request) {
         { name: 'GOOGLE_GEMINI_API_KEY_1', val: process.env.GOOGLE_GEMINI_API_KEY_1 },
         { name: 'GOOGLE_API_KEY', val: process.env.GOOGLE_API_KEY },
         { name: 'GEMINI_API_KEY', val: process.env.GEMINI_API_KEY }
-      ].filter(k => k.val?.trim())
+      ].filter(k => k.val && k.val.trim() !== '' && !k.val.includes('YOUR_'))
 
       if (keysObj.length === 0) {
-        console.error("ERREUR: Aucune clé Google/Gemini trouvée dans process.env")
+        console.error("ERREUR: Aucune clé Google/Gemini valide trouvée dans process.env")
         return NextResponse.json({ error: "Configuration IA incomplète (Clé Gemini absente)" }, { status: 500 })
       }
 
@@ -148,7 +148,7 @@ export async function POST(req: Request) {
       const varName = selected.name
       
       console.log(`[DEBUG] Variable: ${varName} | Key: ${geminiKey.substring(0, 4)}...${geminiKey.substring(geminiKey.length - 4)}`)
-      const models = ["models/gemini-3.1-flash-lite"]
+      const models = ["models/gemini-3.1-flash-lite-preview"]
       let lastError = ""
 
       for (const model of models) {
