@@ -148,7 +148,8 @@ export async function POST(req: Request) {
       const varName = selected.name
       
       console.log(`[DEBUG] Variable: ${varName} | Key: ${geminiKey.substring(0, 4)}...${geminiKey.substring(geminiKey.length - 4)}`)
-      const models = ["models/gemini-3.1-flash-lite-preview"]
+      // Fallback vers des modèles stables si le 3.1 échoue (pour éviter l'erreur HTML/Timeout)
+      const models = ["models/gemini-3.1-flash-lite-preview", "models/gemini-1.5-flash", "models/gemini-2.0-flash-exp"]
       let lastError = ""
 
       for (const model of models) {
