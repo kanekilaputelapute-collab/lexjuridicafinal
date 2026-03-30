@@ -160,7 +160,8 @@ export default function DocumentUpload() {
 
     if (file.type === 'application/pdf') {
       const pdfjsLib = await import('pdfjs-dist')
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
+      // Utilisation du worker legacy plus compatible ou extension .mjs pour v5+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
       const arrayBuffer = await getBuffer(file)
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, stopAtErrors: true }).promise
       for (let i = 1; i <= pdf.numPages; i++) {
