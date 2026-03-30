@@ -8,6 +8,8 @@ import { FileText, ChevronRight, Clock, Star, Upload, Target, CheckCircle2, Zap,
 import Link from 'next/link'
 import { updateGamification } from '@/lib/gamification'
 
+import { initializeUserQuests } from '@/lib/quests'
+
 export default function DashboardPage() {
   const [recentDocs, setRecentDocs] = useState<any[]>([])
   const [stats, setStats] = useState<any>(null)
@@ -26,6 +28,9 @@ export default function DashboardPage() {
         return
       }
 
+      // Initialize Quests (Daily & Weekly)
+      await initializeUserQuests(user.id)
+
       // Fetch Recent Docs
       const { data: docs } = await supabase
         .from('documents')
@@ -41,24 +46,26 @@ export default function DashboardPage() {
         .eq('id', user.id)
         .single()
 
-      // Fetch Quests
+      // Fetch Quests (Active only)
+      const now = new Date().toISOString()
       const { data: userQuests } = await supabase
         .from('user_quests')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: true })
+        .gt('expires_at', now)
+        .order('is_weekly', { ascending: true })
 
-      if (!userQuests || userQuests.length === 0) {
-        await supabase.rpc('initialize_daily_quests', { uid: user.id })
-        const { data: reFetched } = await supabase
-          .from('user_quests')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: true })
-        setQuests(reFetched || [])
-      } else {
-        setQuests(userQuests)
-      }
+      setQuests(userQuests || [])
+      setStats(userStats)
+      setRecentDocs(docs || [])
+      setLoading(false)
+
+      // Fetch Total Cards Count
+      const { count } = await supabase
+        .from('user_srs')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+      setTotalCards(count || 0)
 
       // Increment focus minutes every 60 seconds
       focusInterval = setInterval(async () => {
@@ -88,6 +95,9 @@ export default function DashboardPage() {
     }
   }, [])
 
+  const dailyQuests = quests.filter(q => !q.is_weekly)
+  const weeklyQuests = quests.filter(q => q.is_weekly)
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
@@ -104,17 +114,20 @@ export default function DashboardPage() {
             <div className="lg:col-span-2 space-y-8">
               {/* Daily Quests Section */}
               <section className="glass-card p-6 border-accent/20 bg-accent/5">
-                <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                  <Target size={20} className="text-accent" />
-                  Objectifs du Jour
-                </h2>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    <Target size={20} className="text-accent" />
+                    Objectifs du Jour
+                  </h2>
+                  <span className="text-[10px] text-gray-500 uppercase font-black tracking-widest">Réinitialisation à minuit</span>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {quests.length === 0 ? (
+                  {dailyQuests.length === 0 ? (
                     <div className="col-span-3 text-center py-4 text-gray-500 italic">
-                      Aucun objectif actif. Réinitialisation à minuit.
+                      Chargement des objectifs...
                     </div>
                   ) : (
-                    quests.map(quest => (
+                    dailyQuests.map(quest => (
                       <div key={quest.id} className={`p-4 rounded-xl border transition-all ${quest.completed ? 'bg-green-500/10 border-green-500/50' : 'bg-white/5 border-white/10'}`}>
                         <div className="flex justify-between items-start mb-2">
                           <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${quest.completed ? 'bg-green-500 text-black' : 'bg-accent text-black'}`}>
@@ -137,6 +150,44 @@ export default function DashboardPage() {
                   )}
                 </div>
               </section>
+
+              {/* Weekly Quests Section */}
+              {weeklyQuests.length > 0 && (
+                <section className="glass-card p-6 border-indigo-500/20 bg-indigo-500/5">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-bold flex items-center gap-2 text-indigo-400">
+                      <Trophy size={20} />
+                      Défi de la Semaine
+                    </h2>
+                    <span className="text-[10px] text-indigo-500/50 uppercase font-black tracking-widest">Expire dimanche</span>
+                  </div>
+                  {weeklyQuests.map(quest => (
+                    <div key={quest.id} className={`p-6 rounded-2xl border transition-all ${quest.completed ? 'bg-green-500/10 border-green-500/50' : 'bg-white/5 border-white/10'}`}>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className={`text-xs font-black uppercase px-3 py-1 rounded ${quest.completed ? 'bg-green-500 text-black' : 'bg-indigo-500 text-white'}`}>
+                              {quest.completed ? 'Défi Relevé' : `+${quest.xp_reward} XP`}
+                            </span>
+                            <h3 className="font-bold text-lg">{quest.title}</h3>
+                          </div>
+                          <p className="text-xs text-gray-500 mb-4 italic">Réussissez ce défi avant la fin de la semaine pour un bonus massif d'expérience.</p>
+                          <div className="h-2 bg-white/10 rounded-full overflow-hidden max-w-md">
+                            <div 
+                              className={`h-full transition-all duration-500 ${quest.completed ? 'bg-green-500' : 'bg-indigo-500'}`}
+                              style={{ width: `${Math.min(100, (quest.current_count / quest.target_count) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-3xl font-black text-white">{Math.round((quest.current_count / quest.target_count) * 100)}%</div>
+                          <div className="text-[10px] text-gray-500 font-mono mt-1">{quest.current_count} / {quest.target_count}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </section>
+              )}
 
               {/* IA Duel / Challenge Section */}
               <section className="p-8 glass-card bg-indigo-500/10 border-indigo-500/30 relative overflow-hidden group">

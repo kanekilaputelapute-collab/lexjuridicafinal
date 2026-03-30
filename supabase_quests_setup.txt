@@ -1,0 +1,48 @@
+-- ============================================================
+-- SCRIPT DE RÉPARATION TOTALE : SYSTÈME DE QUÊTES
+-- ============================================================
+-- 1. Nettoyage de l'ancienne version si elle existe
+DROP TABLE IF EXISTS public.user_quests;
+
+-- 2. Création de la table avec la structure exacte
+CREATE TABLE public.user_quests (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    quest_type TEXT NOT NULL, -- 'flashcards', 'upload', 'focus'
+    target_count INTEGER NOT NULL,
+    current_count INTEGER DEFAULT 0,
+    xp_reward INTEGER NOT NULL,
+    completed BOOLEAN DEFAULT false,
+    is_weekly BOOLEAN DEFAULT false,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- 3. Activation de la sécurité (RLS)
+ALTER TABLE public.user_quests ENABLE ROW LEVEL SECURITY;
+
+-- 4. Installation des politiques de sécurité
+-- Politique de lecture
+CREATE POLICY "Users can only see their own quests" 
+ON public.user_quests FOR SELECT 
+USING (auth.uid() = user_id);
+
+-- Politique de mise à jour
+CREATE POLICY "Users can only update their own quests" 
+ON public.user_quests FOR UPDATE 
+USING (auth.uid() = user_id);
+
+-- Politique d'insertion
+CREATE POLICY "Users can insert their own quests" 
+ON public.user_quests FOR INSERT 
+WITH CHECK (auth.uid() = user_id);
+
+-- Politique de suppression
+CREATE POLICY "Users can delete their own quests" 
+ON public.user_quests FOR DELETE 
+USING (auth.uid() = user_id);
+
+-- ============================================================
+-- FIN DU SCRIPT - CLIQUEZ SUR 'RUN' DANS SUPABASE
+-- ============================================================

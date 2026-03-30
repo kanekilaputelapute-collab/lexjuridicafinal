@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, FileText, Brain, GraduationCap, Trophy, LogOut, BookOpen } from 'lucide-react'
+import { LayoutDashboard, FileText, Brain, GraduationCap, Trophy, LogOut, BookOpen, Zap } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { name: 'Documents', icon: FileText, href: '/documents' },
   { name: 'Revision SRS', icon: Brain, href: '/revision' },
   { name: 'Tuteur IA', icon: GraduationCap, href: '/chat' },
+  { name: 'Duel IA', icon: Zap, href: '/challenge' },
   { name: 'Classement', icon: Trophy, href: '/leaderboard' },
 ]
 

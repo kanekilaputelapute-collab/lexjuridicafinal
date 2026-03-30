@@ -1,0 +1,41 @@
+-- ============================================================
+-- SCRIPT DE RÉPARATION DES INSCRIPTIONS (ERREUR 500)
+-- ============================================================
+-- Copiez et collez tout ce code dans le SQL EDITOR de Supabase
+-- Puis cliquez sur "Run" pour débloquer les créations de compte.
+
+-- 1. SÉCURISATION DES COLONNES (S'assure que les tables sont à jour)
+ALTER TABLE public.user_stats ADD COLUMN IF NOT EXISTS focus_minutes INTEGER DEFAULT 0;
+ALTER TABLE public.user_stats ADD COLUMN IF NOT EXISTS cards_reviewed INTEGER DEFAULT 0;
+ALTER TABLE public.user_stats ADD COLUMN IF NOT EXISTS documents_uploaded INTEGER DEFAULT 0;
+ALTER TABLE public.user_stats ADD COLUMN IF NOT EXISTS ai_energy INTEGER DEFAULT 40;
+
+-- 2. RECRÉATION DE LA FONCTION D'INITIALISATION
+-- Cette fonction est appelée automatiquement à chaque nouvelle inscription
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  -- Création de la ligne dans user_xp (Niveau 1, 0 XP)
+  INSERT INTO public.user_xp (id, email, level, total_xp)
+  VALUES (new.id, new.email, 1, 0)
+  ON CONFLICT (id) DO NOTHING;
+  
+  -- Création de la ligne dans user_stats (40 Énergie de départ)
+  INSERT INTO public.user_stats (id, ai_energy, focus_minutes, cards_reviewed, documents_uploaded)
+  VALUES (new.id, 40, 0, 0, 0)
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3. RÉINSTALLATION DU TRIGGER
+-- Connecte la création d'utilisateur Auth à notre fonction ci-dessus
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- ============================================================
+-- FIN DU SCRIPT - VOUS POUVEZ TESTER UNE INSCRIPTION
+-- ============================================================

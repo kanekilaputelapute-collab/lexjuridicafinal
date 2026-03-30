@@ -1,0 +1,139 @@
+-- ============================================================
+-- LEXJURIDICA : MASTER DATABASE SETUP (RÉPARATION TOTALE)
+-- ============================================================
+-- Ce script initialise ou répare TOUTES les tables et la sécurité.
+
+-- 1. TABLE USER_XP (Niveaux et Classement)
+CREATE TABLE IF NOT EXISTS public.user_xp (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT,
+    level INTEGER DEFAULT 1,
+    total_xp INTEGER DEFAULT 0,
+    rank_title TEXT DEFAULT 'Étudiant en Droit',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- 2. TABLE USER_STATS (Énergie et Statistiques)
+CREATE TABLE IF NOT EXISTS public.user_stats (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    ai_energy INTEGER DEFAULT 40,
+    focus_minutes INTEGER DEFAULT 0,
+    cards_reviewed INTEGER DEFAULT 0,
+    documents_uploaded INTEGER DEFAULT 0,
+    streak_days INTEGER DEFAULT 0,
+    last_streak_date TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- 3. TABLE USER_QUESTS (Objectifs du jour)
+DROP TABLE IF EXISTS public.user_quests; -- On recrée pour éviter les erreurs 400
+CREATE TABLE public.user_quests (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    quest_type TEXT NOT NULL, -- 'flashcards', 'upload', 'focus'
+    target_count INTEGER NOT NULL,
+    current_count INTEGER DEFAULT 0,
+    xp_reward INTEGER NOT NULL,
+    completed BOOLEAN DEFAULT false,
+    is_weekly BOOLEAN DEFAULT false,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- 4. TABLE DOCUMENTS (Cours et Fiches)
+CREATE TABLE IF NOT EXISTS public.documents (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    content_raw TEXT,
+    summary_html TEXT,
+    size INTEGER,
+    type TEXT,
+    status TEXT DEFAULT 'done',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    UNIQUE(user_id, title)
+);
+
+-- 5. TABLE DECKS (Groupes de Flashcards)
+CREATE TABLE IF NOT EXISTS public.decks (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- 6. TABLE USER_SRS (Flashcards individuelles)
+CREATE TABLE IF NOT EXISTS public.user_srs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    deck_id UUID REFERENCES public.decks(id) ON DELETE CASCADE,
+    front TEXT NOT NULL,
+    back TEXT NOT NULL,
+    next_review TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    repetition INTEGER DEFAULT 0,
+    ease_factor FLOAT DEFAULT 2.5,
+    interval INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+-- 7. TRIGGER D'INSCRIPTION AUTOMATIQUE
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.user_xp (id, email, level, total_xp)
+  VALUES (new.id, new.email, 1, 0)
+  ON CONFLICT (id) DO NOTHING;
+  
+  INSERT INTO public.user_stats (id, ai_energy)
+  VALUES (new.id, 40)
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- 8. SÉCURISATION (RLS)
+ALTER TABLE public.user_xp ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_stats ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_quests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.decks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_srs ENABLE ROW LEVEL SECURITY;
+
+-- Politiques (Tout est verrouillé par utilisateur)
+-- Documents
+DROP POLICY IF EXISTS "D" ON public.documents;
+CREATE POLICY "D" ON public.documents FOR ALL USING (auth.uid() = user_id);
+
+-- Decks
+DROP POLICY IF EXISTS "De" ON public.decks;
+CREATE POLICY "De" ON public.decks FOR ALL USING (auth.uid() = user_id);
+
+-- SRS
+DROP POLICY IF EXISTS "S" ON public.user_srs;
+CREATE POLICY "S" ON public.user_srs FOR ALL USING (auth.uid() = user_id);
+
+-- Stats
+DROP POLICY IF EXISTS "St" ON public.user_stats;
+CREATE POLICY "St" ON public.user_stats FOR ALL USING (auth.uid() = id);
+
+-- XP (Lecture publique pour le leaderboard, écriture privée)
+DROP POLICY IF EXISTS "XPR" ON public.user_xp;
+CREATE POLICY "XPR" ON public.user_xp FOR SELECT USING (true);
+DROP POLICY IF EXISTS "XPU" ON public.user_xp;
+CREATE POLICY "XPU" ON public.user_xp FOR UPDATE USING (auth.uid() = id);
+
+-- Quêtes
+DROP POLICY IF EXISTS "Q" ON public.user_quests;
+CREATE POLICY "Q" ON public.user_quests FOR ALL USING (auth.uid() = user_id);
+
+-- ============================================================
+-- FIN DU SCRIPT MASTER - CLIQUEZ SUR 'RUN'
+-- ============================================================

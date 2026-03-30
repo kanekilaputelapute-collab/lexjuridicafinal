@@ -71,6 +71,52 @@ export default function DocumentDetailPage() {
     }
   }
 
+  const sanitizeHTML = (html: string) => {
+    if (!html) return ''
+    
+    // Conversion markdown → HTML
+    let cleaned = html
+      // Titres
+      .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      // Gras et italique
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      // Séparateurs
+      .replace(/^---$/gm, '<hr/>')
+      // Listes à puces (lignes commençant par * ou -)
+      .replace(/^\* (.+)$/gm, '<li>$1</li>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      // Listes numérotées
+      .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+      // Tableaux markdown (ligne séparatrice ignorée)
+      .replace(/^\|(.+)\|$/gm, (match) => {
+        const cells = match.split('|').filter(c => c.trim() !== '')
+        const isHeader = cells.some(c => c.includes('---'))
+        if (isHeader) return ''
+        const tag = 'td'
+        return '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>'
+      })
+      // Regrouper les <li> consécutifs dans des <ul>
+      .replace(/(<li>[\s\S]+?<\/li>)(\s*<li>[\s\S]+?<\/li>)*/g, (match) => `<ul>${match}</ul>`)
+      // Regrouper les <tr> consécutifs dans des <table>
+      .replace(/(<tr>[\s\S]+?<\/tr>)(\s*<tr>[\s\S]+?<\/tr>)*/g, (match) => `<table class="fiche-table">${match}</table>`)
+      // Doubles sauts de ligne → paragraphes
+      .replace(/\n\n+/g, '</p><p>')
+      // Simple saut de ligne → <br>
+      .replace(/\n/g, '<br/>')
+      // Supprimer les balises dangereuses
+      .replace(/<(script|style|iframe|object|embed)[^>]*>([\s\S]*?)<\/\1>/gi, '')
+      .replace(/ on\w+="[^"]*"/gi, '')
+      .replace(/ on\w+='[^']*'/gi, '')
+      .replace(/href\s*=\s*["']javascript:[^"']*["']/gi, 'href="#"')
+    
+    return `<p>${cleaned}</p>`
+  }
+
   if (loading) return <div className="p-8 text-center text-accent">Analyse du document...</div>
   if (!doc) return <div className="p-8 text-center">Document introuvable.</div>
 
@@ -102,7 +148,7 @@ export default function DocumentDetailPage() {
 
           <div className="glass-card p-8 min-h-[70vh] fiche-content print:border-none print:p-0">
             <div 
-              dangerouslySetInnerHTML={{ __html: doc.summary_html }} 
+              dangerouslySetInnerHTML={{ __html: sanitizeHTML(doc.summary_html) }} 
               className="prose prose-invert prose-gold max-w-none"
             />
           </div>
@@ -172,18 +218,29 @@ export default function DocumentDetailPage() {
       </main>
 
       <style jsx global>{`
-        .fiche-content h3 { color: var(--accent); margin-top: 2rem; font-weight: 800; font-size: 1.5rem; border-left: 4px solid var(--accent); padding-left: 1rem; }
-        .fiche-content ul { list-style: none; padding-left: 0; margin-top: 1rem; }
-        .fiche-content li { margin-bottom: 0.75rem; padding-left: 1.5rem; position: relative; }
-        .fiche-content li::before { content: "•"; color: var(--accent); position: absolute; left: 0; font-weight: bold; }
-        .fiche-content strong { color: #fff; }
-        
+        .fiche-content h1 { color: var(--accent); margin-top: 2.5rem; margin-bottom: 1rem; font-weight: 900; font-size: 1.8rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+        .fiche-content h2 { color: #fff; margin-top: 2rem; margin-bottom: 0.75rem; font-weight: 800; font-size: 1.4rem; border-left: 4px solid var(--accent); padding-left: 1rem; }
+        .fiche-content h3 { color: var(--accent); margin-top: 1.5rem; margin-bottom: 0.5rem; font-weight: 800; font-size: 1.15rem; }
+        .fiche-content h4 { color: #a0a0a0; margin-top: 1rem; margin-bottom: 0.4rem; font-weight: 700; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        .fiche-content hr { border-color: rgba(255,255,255,0.1); margin: 2rem 0; }
+        .fiche-content p { margin-bottom: 0.75rem; line-height: 1.8; color: #d1d5db; }
+        .fiche-content ul { list-style: none; padding-left: 0; margin: 0.75rem 0 1rem 0; }
+        .fiche-content li { margin-bottom: 0.6rem; padding-left: 1.5rem; position: relative; line-height: 1.7; color: #d1d5db; }
+        .fiche-content li::before { content: "▸"; color: var(--accent); position: absolute; left: 0; font-size: 0.75rem; top: 0.3rem; }
+        .fiche-content strong { color: #fff; font-weight: 700; }
+        .fiche-content em { color: #c4b5fd; font-style: italic; }
+        .fiche-content table.fiche-table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.875rem; }
+        .fiche-content table.fiche-table td { border: 1px solid rgba(255,255,255,0.1); padding: 0.6rem 1rem; color: #d1d5db; }
+        .fiche-content table.fiche-table tr:first-child td { background: rgba(201,168,76,0.1); color: var(--accent); font-weight: 700; }
+        .fiche-content table.fiche-table tr:nth-child(even) td { background: rgba(255,255,255,0.02); }
+
         @media print {
           body { background: white !important; color: black !important; }
           .glass-card { background: white !important; border: none !important; color: black !important; backdrop-filter: none !important; }
-          .fiche-content h3 { color: #000 !important; border-left-color: #000 !important; }
+          .fiche-content h1, .fiche-content h2, .fiche-content h3, .fiche-content h4 { color: #000 !important; border-color: #000 !important; }
           .fiche-content li::before { color: #000 !important; }
           .fiche-content strong { color: #000 !important; }
+          .fiche-content p, .fiche-content li, .fiche-content td { color: #000 !important; }
         }
       `}</style>
     </div>

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Zap, Award, Flame } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
@@ -8,20 +8,23 @@ export default function UserStatusBar() {
   const [stats, setStats] = useState<any>(null)
   const supabase = createClient()
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     const { data: xp } = await supabase.from('user_xp').select('*').eq('id', user.id).single()
     const { data: st } = await supabase.from('user_stats').select('*').eq('id', user.id).single()
     
-    setXpData(xp)
-    setStats(st)
-
+    if (xp) {
+      const level = Math.floor(xp.total_xp / 1000) + 1
+      const rankTitle = level >= 10 ? 'Maître du Droit' : level >= 5 ? 'Avocat Senior' : level >= 3 ? 'Juriste Confirmé' : 'Étudiant en Droit'
+      setXpData({ ...xp, level, rank_title: rankTitle })
+    }
     if (st) {
+      setStats(st)
       console.log(`%c[LexJuridica] ⚡ Énergie IA : ${st.ai_energy}/40 crédits restants. Chaque demande d'IA consomme 1 crédit.`, "color: #fbbf24; font-weight: bold;");
     }
-  }
+  }, [supabase])
 
   useEffect(() => {
     fetchData()
@@ -31,11 +34,12 @@ export default function UserStatusBar() {
     window.addEventListener('update-xp', handleXpUpdate)
     
     return () => window.removeEventListener('update-xp', handleXpUpdate)
-  }, [])
+  }, [fetchData])
 
   if (!xpData || !stats) return null
 
   const progress = (xpData.total_xp % 1000) / 10
+  const MAX_ENERGY = 40
 
   return (
     <div className="flex flex-wrap gap-4 md:gap-6 items-center p-4 glass-card mb-8 animate-in slide-in-from-top duration-500">
@@ -71,10 +75,10 @@ export default function UserStatusBar() {
       </div>
 
       <div className="flex items-center gap-3 px-4 md:px-6 border-l border-white/10">
-        <Zap size={20} className={stats.ai_energy > 10 ? 'text-yellow-400' : 'text-red-400'} />
+        <Zap size={20} className={stats.ai_energy > (MAX_ENERGY * 0.25) ? 'text-yellow-400' : 'text-red-400'} />
         <div>
           <div className="text-xs text-gray-400">Énergie IA</div>
-          <div className="font-bold">{stats.ai_energy}/40</div>
+          <div className="font-bold">{stats.ai_energy}/{MAX_ENERGY}</div>
         </div>
       </div>
     </div>

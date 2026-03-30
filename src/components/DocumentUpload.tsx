@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { Upload, CheckCircle2, Loader2, PartyPopper, Scale, ShieldAlert, BookOpen, Lightbulb, AlertTriangle } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Upload, CheckCircle2, Loader2, PartyPopper, Scale, ShieldAlert, BookOpen, Lightbulb, AlertTriangle, XCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import mammoth from 'mammoth'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -8,14 +8,13 @@ import confetti from 'canvas-confetti'
 import { updateGamification } from '@/lib/gamification'
 
 // CONFIGURATION
-const CHUNK_SIZE = 18000
+const CHUNK_SIZE = 12000
 const SECURE_DELAY = 4500
-const ADMIN_EMAILS = ['teampush5@gmail.com']
 
 const LEGAL_FACTS = [
   "Le saviez-vous ? Le Code civil de 1804 contenait 2281 articles originaux.",
   "Conseil : La structure de votre fiche respecte toujours le plan I. II. III.",
-  "En droit, 'Nul n'est censé ignorer la loi' est une fiction juridique indispensable.",
+  "En droit, 'Nul n'est censé ignororer la loi' est une fiction juridique indispensable.",
   "Le Pass 2 de l'IA audite vos flashcards pour ne rater aucun arrêt de cassation.",
   "Astuce : Révisez vos flashcards le soir avant de dormir pour une meilleure rétention.",
   "Le Conseil constitutionnel a été créé en 1958, sous la Ve République.",
@@ -135,7 +134,15 @@ export default function DocumentUpload() {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
+  const isCancelled = useRef(false)
   const supabase = createClient()
+
+  const handleCancel = () => {
+    isCancelled.current = true
+    setLoading(false)
+    setStatus('Annulation en cours...')
+    window.location.reload() // Solution radicale mais sûre pour stopper tous les timeouts
+  }
 
   const extractText = async (file: File): Promise<string> => {
     let rawText = ''
@@ -145,6 +152,7 @@ export default function DocumentUpload() {
       const arrayBuffer = await file.arrayBuffer()
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, stopAtErrors: true }).promise
       for (let i = 1; i <= pdf.numPages; i++) {
+        if (isCancelled.current) throw new Error('CANCELED')
         const page = await pdf.getPage(i)
         const content = await page.getTextContent()
         rawText += content.items.map((item: any) => item.str).join(' ') + "\n\n"
@@ -161,20 +169,22 @@ export default function DocumentUpload() {
     if (!file) return
     setLoading(true)
     setStatus('Préparation du document...')
+    isCancelled.current = false
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Non connecté')
       
       const cleanedText = await extractText(file)
+      if (isCancelled.current) return
+
       const chunks = splitIntoChunks(cleanedText)
       const totalChunks = chunks.length
 
       // ── CHECK ÉNERGIE PRÉDICTIF ────────────────────────
       const estimatedCost = 1 + (totalChunks * 2)
       const { data: stats } = await supabase.from('user_stats').select('ai_energy').eq('id', user.id).single()
-      const isAdmin = user.email && ADMIN_EMAILS.includes(user.email)
-      if (!isAdmin && (stats?.ai_energy || 0) < estimatedCost) {
+      if ((stats?.ai_energy || 0) < estimatedCost) {
         throw new Error(`Énergie insuffisante (${stats?.ai_energy || 0}/${estimatedCost} requis).`)
       }
 
@@ -182,17 +192,22 @@ export default function DocumentUpload() {
       setStatus('Extraction des données juridiques...')
       const summaryExtracts: string[] = []
       for (let i = 0; i < chunks.length; i++) {
+        if (isCancelled.current) return
         setStatus(`Extraction : bloc ${i + 1}/${totalChunks}...`)
         const extract = await callIA(chunks[i], 'summary_extract')
         summaryExtracts.push(`--- BLOC ${i+1} ---\n${extract}`)
         if (i < totalChunks - 1) await new Promise(r => setTimeout(r, SECURE_DELAY))
       }
 
-      setStatus('Rédaction de la fiche par Mistral Large...')
-      const fullSummaryHtml = await callIA(summaryExtracts.join('\n\n'), 'fiche_assemble')
+      if (isCancelled.current) return
+      setStatus('Assemblage de la fiche...')
+      const fullSummaryHtml = summaryExtracts
+        .join('\n\n')
+        .replace(/--- BLOC \d+ ---\n/g, '')
 
+      if (isCancelled.current) return
       const { data: doc } = await supabase.from('documents').upsert({
-        user_id: user.id, title: file.name, content_raw: cleanedText.substring(0, 15000),
+        user_id: user.id, title: file.name, content_raw: cleanedText,
         summary_html: fullSummaryHtml, size: file.size, type: file.type, status: 'done'
       }, { onConflict: 'user_id,title' }).select().single()
 
@@ -200,6 +215,7 @@ export default function DocumentUpload() {
       setStatus('Génération des flashcards...')
       const allCards: any[] = []
       for (let i = 0; i < chunks.length; i++) {
+        if (isCancelled.current) return
         setStatus(`Flashcards Pass 1 : bloc ${i + 1}/${totalChunks}...`)
         const rawPass1 = await callIA(chunks[i], 'flashcards')
         const cardsPass1 = parseFlashcards(rawPass1)
@@ -207,6 +223,7 @@ export default function DocumentUpload() {
 
         await new Promise(r => setTimeout(r, SECURE_DELAY))
 
+        if (isCancelled.current) return
         setStatus(`Flashcards Pass 2 : bloc ${i + 1}/${totalChunks}...`)
         const questionsPass1 = cardsPass1.slice(0, 40).map(c => c.q).join(' | ')
         const pass2Input = `COURS:\n${chunks[i].substring(0, 10000)}\n\nQUESTIONS DÉJÀ EXISTANTES:\n${questionsPass1}`
@@ -217,6 +234,7 @@ export default function DocumentUpload() {
         if (i < chunks.length - 1) await new Promise(r => setTimeout(r, SECURE_DELAY))
       }
 
+      if (isCancelled.current) return
       const seen = new Set<string>()
       const dedupedCards = allCards.filter(c => {
         const q = (c.q || c.question || '').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 60)
@@ -232,12 +250,14 @@ export default function DocumentUpload() {
         })))
       }
 
+      if (isCancelled.current) return
       await updateGamification(user.id, 'upload')
       setStatus('Terminé !')
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: ['#c9a84c', '#ffffff', '#000000'] })
       setShowSuccess(true)
       setTimeout(() => window.location.reload(), 2000)
     } catch (err: any) {
+      if (err.message === 'CANCELED') return
       alert(err.message)
       setLoading(false)
     }
@@ -266,7 +286,16 @@ export default function DocumentUpload() {
               <Loader2 className="animate-spin text-accent" size={16} />
               <p className="text-accent font-bold text-sm">{status}</p>
             </div>
+            
             <FactRotator />
+
+            <button 
+              onClick={handleCancel}
+              className="mt-8 flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg text-xs font-bold transition-all mx-auto border border-red-500/20"
+            >
+              <XCircle size={14} /> Annuler l'analyse
+            </button>
+
             <p className="text-[10px] text-gray-500 italic mt-6 flex items-center justify-center gap-1">
               <ShieldAlert size={10} /> Analyse hybride — fidélité maximale garantie.
             </p>

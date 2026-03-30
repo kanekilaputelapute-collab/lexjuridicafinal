@@ -1,25 +1,23 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/Sidebar'
 import UserStatusBar from '@/components/UserStatusBar'
 import { FileText, Search, Clock, Trash2, ExternalLink, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 export default function DocumentsPage() {
   const [docs, setDocs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const supabase = createClient()
+  const router = useRouter()
 
-  useEffect(() => {
-    fetchDocs()
-  }, [])
-
-  async function fetchDocs() {
+  const fetchDocs = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      window.location.href = '/'
+      router.push('/')
       return
     }
 
@@ -28,14 +26,30 @@ export default function DocumentsPage() {
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
-
+    
     setDocs(data || [])
     setLoading(false)
-  }
+  }, [supabase, router])
+
+  useEffect(() => {
+    fetchDocs()
+  }, [fetchDocs])
 
   const handleDelete = async (id: string) => {
     if (!confirm('Supprimer ce document et ses flashcards ?')) return
     
+    // 1. Trouver les decks associés à ce document
+    const { data: decks } = await supabase.from('decks').select('id').eq('document_id', id)
+    
+    if (decks && decks.length > 0) {
+      const deckIds = decks.map(d => d.id)
+      // 2. Supprimer les cartes de ces decks
+      await supabase.from('user_srs').delete().in('deck_id', deckIds)
+      // 3. Supprimer les decks
+      await supabase.from('decks').delete().in('id', deckIds)
+    }
+
+    // 4. Supprimer le document
     const { error } = await supabase.from('documents').delete().eq('id', id)
     if (!error) {
       setDocs(docs.filter(d => d.id !== id))

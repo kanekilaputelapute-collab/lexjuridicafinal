@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { calculateNextReview, SRSGrade, SRSCard, getIntervalPreview } from '@/lib/srs'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,6 +9,7 @@ import { Brain, Play, ChevronRight, Loader2, BookOpen, Edit2, Download, Check, X
 import confetti from 'canvas-confetti'
 import { generateSRSPDF } from '@/lib/pdf'
 import { updateGamification } from '@/lib/gamification'
+import { useRouter } from 'next/navigation'
 
 export default function RevisionPage() {
   const [decks, setDecks] = useState<any[]>([])
@@ -23,21 +24,56 @@ export default function RevisionPage() {
   const [editingDeckId, setEditingDeckId] = useState<string | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null)
+  const [now, setNow] = useState(new Date())
   
   const supabase = createClient()
+  const router = useRouter()
+
+  const fetchDecks = useCallback(async () => {
+    setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      router.push('/')
+      return
+    }
+
+    const { data: decksData } = await supabase
+      .from('decks')
+      .select(`*, user_srs ( id, next_review, repetition, front, back, ease_factor, interval )`)
+      .eq('user_id', user.id)
+
+    const processedDecks = decksData?.map(deck => {
+      const cards = deck.user_srs || []
+      
+      // Sort to find the very next review scheduled
+      const sortedByNext = [...cards].sort((a, b) => new Date(a.next_review).getTime() - new Date(b.next_review).getTime())
+      const nextReviewDate = sortedByNext.length > 0 ? new Date(sortedByNext[0].next_review) : null
+
+      return {
+        ...deck,
+        cards_raw: cards,
+        total: cards.length,
+        due: cards.filter((c: any) => new Date(c.next_review) <= new Date()).length,
+        new: cards.filter((c: any) => c.repetition === 0).length,
+        next_due_at: nextReviewDate
+      }
+    })
+
+    setDecks(processedDecks || [])
+    setLoading(false)
+  }, [supabase, router])
 
   useEffect(() => {
     fetchDecks()
     
     // Auto-refresh the 'due' status every 30 seconds
     const timer = setInterval(() => {
-      setDecks(prevDecks => prevDecks.map(deck => {
-        const now = new Date()
-        return {
-          ...deck,
-          due: deck.cards_raw.filter((c: any) => new Date(c.next_review) <= now).length
-        }
-      }))
+      const currentNow = new Date()
+      setNow(currentNow)
+      setDecks(prevDecks => prevDecks.map(deck => ({
+        ...deck,
+        due: deck.cards_raw.filter((c: any) => new Date(c.next_review) <= currentNow).length
+      })))
     }, 30000)
 
     // Keyboard support: Space bar to flip
@@ -53,42 +89,7 @@ export default function RevisionPage() {
       clearInterval(timer)
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [selectedDeck, cards.length, sessionFinished])
-
-  async function fetchDecks() {
-    setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      window.location.href = '/'
-      return
-    }
-
-    const { data: decksData } = await supabase
-      .from('decks')
-      .select(`*, user_srs ( id, next_review, repetition, front, back, ease_factor, interval )`)
-      .eq('user_id', user.id)
-
-    const processedDecks = decksData?.map(deck => {
-      const cards = deck.user_srs || []
-      const now = new Date()
-      
-      // Sort to find the very next review scheduled
-      const sortedByNext = [...cards].sort((a, b) => new Date(a.next_review).getTime() - new Date(b.next_review).getTime())
-      const nextReviewDate = sortedByNext.length > 0 ? new Date(sortedByNext[0].next_review) : null
-
-      return {
-        ...deck,
-        cards_raw: cards,
-        total: cards.length,
-        due: cards.filter((c: any) => new Date(c.next_review) <= now).length,
-        new: cards.filter((c: any) => c.repetition === 0).length,
-        next_due_at: nextReviewDate
-      }
-    })
-
-    setDecks(processedDecks || [])
-    setLoading(false)
-  }
+  }, [selectedDeck, cards.length, sessionFinished, fetchDecks])
 
   const handleRename = async (deckId: string) => {
     if (!newTitle.trim()) return
@@ -103,6 +104,10 @@ export default function RevisionPage() {
   const handleDeleteDeck = async (deckId: string) => {
     if (!confirm("Voulez-vous vraiment supprimer ce deck ? Toutes les cartes associées seront perdues.")) return
 
+    // 1. Supprimer explicitement les cartes du deck
+    await supabase.from('user_srs').delete().eq('deck_id', deckId)
+
+    // 2. Supprimer le deck
     const { error } = await supabase.from('decks').delete().eq('id', deckId)
     
     if (error) {
@@ -145,6 +150,28 @@ export default function RevisionPage() {
       setSessionFinished(null)
     } else {
       alert(free ? "Aucune carte dans ce deck !" : "Aucune carte due !")
+    }
+  }
+
+  const [isEditingCard, setIsEditingCard] = useState(false)
+  const [editedFront, setEditedFront] = useState('')
+  const [editedBack, setEditedBack] = useState('')
+
+  const handleSaveEdit = async () => {
+    const card = cards[currentIdx]
+    const { error } = await supabase
+      .from('user_srs')
+      .update({ front: editedFront, back: editedBack })
+      .eq('id', card.id)
+
+    if (!error) {
+      const updatedCards = [...cards]
+      updatedCards[currentIdx] = { ...card, front: editedFront, back: editedBack }
+      setCards(updatedCards)
+      setIsEditingCard(false)
+      showNotification('Carte mise à jour !')
+    } else {
+      showNotification('Erreur lors de la mise à jour', 'error')
     }
   }
 
@@ -366,44 +393,89 @@ export default function RevisionPage() {
           ) : (
             <div className="max-w-2xl mx-auto relative">
               <div className="mb-8 flex items-center justify-between">
-                <button onClick={() => setSelectedDeck(null)} className="text-xs text-gray-500 hover:text-white flex items-center gap-1"><ChevronRight size={14} className="rotate-180" /> Quitter</button>
+                <div className="flex items-center gap-4">
+                  <button onClick={() => setSelectedDeck(null)} className="text-xs text-gray-500 hover:text-white flex items-center gap-1"><ChevronRight size={14} className="rotate-180" /> Quitter</button>
+                  {!isEditingCard && (
+                    <button 
+                      onClick={() => {
+                        setEditedFront(cards[currentIdx].front)
+                        setEditedBack(cards[currentIdx].back)
+                        setIsEditingCard(true)
+                      }} 
+                      className="text-xs text-accent hover:underline flex items-center gap-1"
+                    >
+                      <Edit2 size={12} /> Modifier la carte
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center gap-3">
                   {isFreeRevision && <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-[10px] font-black rounded border border-blue-500/30 tracking-tighter">MODE LIBRE</span>}
                   <div className="text-xs font-bold uppercase tracking-widest text-accent">Session : {selectedDeck.title} ({currentIdx + 1}/{cards.length})</div>
                 </div>
               </div>
+              
               <AnimatePresence>
                 {xpFlash && <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: -40 }} exit={{ opacity: 0 }} className="absolute left-1/2 -translate-x-1/2 text-2xl font-black text-accent z-50">+{xpFlash} XP</motion.div>}
               </AnimatePresence>
-              <div className="relative h-[400px] perspective-1000">
-                <motion.div 
-                  key={cards[currentIdx].id} 
-                  initial={{ rotateY: 0 }} 
-                  animate={{ rotateY: isFlipped ? 180 : 0 }} 
-                  transition={{ duration: 0.6, type: 'spring' }} 
-                  className="w-full h-full relative preserve-3d cursor-pointer" 
-                  onClick={() => setIsFlipped(prev => !prev)}
-                >
-                  <div className={`absolute inset-0 backface-hidden glass-card p-8 flex flex-col items-center justify-center text-center`}>
-                    <div className="text-xs text-accent uppercase tracking-widest mb-4">Question</div>
-                    <div className="text-xl font-medium">{cards[currentIdx].front}</div>
+
+              {isEditingCard ? (
+                <div className="glass-card p-8 space-y-6 animate-in fade-in zoom-in duration-300">
+                  <div>
+                    <label className="block text-xs font-bold text-accent uppercase mb-2">Question (Recto)</label>
+                    <textarea 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white focus:border-accent outline-none min-h-[100px] resize-none"
+                      value={editedFront}
+                      onChange={(e) => setEditedFront(e.target.value)}
+                    />
                   </div>
-                  <div className={`absolute inset-0 backface-hidden glass-card p-8 flex flex-col items-center justify-center text-center rotate-y-180`}>
-                    <div className="text-xs text-accent uppercase tracking-widest mb-4">Réponse</div>
-                    <div className="text-lg leading-relaxed">{cards[currentIdx].back}</div>
+                  <div>
+                    <label className="block text-xs font-bold text-accent uppercase mb-2">Réponse (Verso)</label>
+                    <textarea 
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white focus:border-accent outline-none min-h-[150px] resize-none"
+                      value={editedBack}
+                      onChange={(e) => setEditedBack(e.target.value)}
+                    />
                   </div>
-                </motion.div>
-                {isFlipped && (
-                  <div className="mt-8 grid grid-cols-4 gap-4">
-                    {[0, 1, 2, 3].map((g) => (
-                      <button key={g} onClick={() => handleGrade(g as SRSGrade)} className={`p-4 rounded-xl transition-all border border-white/10 hover:border-accent group ${g === 0 ? 'hover:bg-red-500/10' : g === 1 ? 'hover:bg-orange-500/10' : 'hover:bg-green-500/10'}`}>
-                        <div className="text-sm font-bold capitalize">{g === 0 ? 'Again' : g === 1 ? 'Hard' : g === 2 ? 'Good' : g === 3 ? 'Easy' : ''}</div>
-                        <div className="text-xs text-gray-500 mt-1">{getIntervalPreview(cards[currentIdx], g as SRSGrade)}</div>
-                      </button>
-                    ))}
+                  <div className="flex gap-4">
+                    <button onClick={handleSaveEdit} className="flex-1 btn-premium py-3 flex items-center justify-center gap-2">
+                      <Check size={18} /> Enregistrer
+                    </button>
+                    <button onClick={() => setIsEditingCard(false)} className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 py-3 rounded-xl font-bold transition-all border border-white/10 flex items-center justify-center gap-2">
+                      <X size={18} /> Annuler
+                    </button>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="relative h-[400px] perspective-1000">
+                  <motion.div 
+                    key={cards[currentIdx].id} 
+                    initial={{ rotateY: 0 }} 
+                    animate={{ rotateY: isFlipped ? 180 : 0 }} 
+                    transition={{ duration: 0.6, type: 'spring' }} 
+                    className="w-full h-full relative preserve-3d cursor-pointer" 
+                    onClick={() => setIsFlipped(prev => !prev)}
+                  >
+                    <div className={`absolute inset-0 backface-hidden glass-card p-8 flex flex-col items-center justify-center text-center`}>
+                      <div className="text-xs text-accent uppercase tracking-widest mb-4">Question</div>
+                      <div className="text-xl font-medium">{cards[currentIdx].front}</div>
+                    </div>
+                    <div className={`absolute inset-0 backface-hidden glass-card p-8 flex flex-col items-center justify-center text-center rotate-y-180`}>
+                      <div className="text-xs text-accent uppercase tracking-widest mb-4">Réponse</div>
+                      <div className="text-lg leading-relaxed">{cards[currentIdx].back}</div>
+                    </div>
+                  </motion.div>
+                  {isFlipped && (
+                    <div className="mt-8 grid grid-cols-4 gap-4">
+                      {[0, 1, 2, 3].map((g) => (
+                        <button key={g} onClick={() => handleGrade(g as SRSGrade)} className={`p-4 rounded-xl transition-all border border-white/10 hover:border-accent group ${g === 0 ? 'hover:bg-red-500/10' : g === 1 ? 'hover:bg-orange-500/10' : 'hover:bg-green-500/10'}`}>
+                          <div className="text-sm font-bold capitalize">{g === 0 ? 'Again' : g === 1 ? 'Hard' : g === 2 ? 'Good' : g === 3 ? 'Easy' : ''}</div>
+                          <div className="text-xs text-gray-500 mt-1">{getIntervalPreview(cards[currentIdx], g as SRSGrade)}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

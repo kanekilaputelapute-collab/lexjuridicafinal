@@ -25,17 +25,30 @@ export default function LeaderboardPage() {
         .order('total_xp', { ascending: false })
         .limit(20)
 
-      setLeaderboard(board || [])
+      // SÉCURITÉ : On ne garde qu'une version masquée de l'email AVANT de la mettre en state
+      const sanitizedBoard = (board || []).map(u => ({
+        ...u,
+        displayName: maskEmail(u.email)
+      }))
+
+      setLeaderboard(sanitizedBoard)
       
-      const userRank = board?.findIndex(u => u.id === user.id)
-      if (board && userRank !== undefined && userRank !== -1) {
-        setCurrentUserRank({ rank: userRank + 1, ...board[userRank] })
+      const userRank = sanitizedBoard.findIndex(u => u.id === user.id)
+      if (sanitizedBoard && userRank !== undefined && userRank !== -1) {
+        setCurrentUserRank({ rank: userRank + 1, ...sanitizedBoard[userRank] })
       }
       
       setLoading(false)
     }
     fetchLeaderboard()
   }, [])
+
+  const maskEmail = (email: string) => {
+    if (!email) return 'Anonyme'
+    const [local] = email.split('@')
+    if (local.length <= 2) return local[0] + '***'
+    return local[0] + '***' + local[local.length - 1]
+  }
 
   const topThree = leaderboard.slice(0, 3)
   const others = leaderboard.slice(3)
@@ -75,7 +88,7 @@ export default function LeaderboardPage() {
                 {topThree[1] && (
                   <div className="glass-card p-6 h-[200px] relative flex flex-col items-center justify-center border-blue-400/20 order-2 md:order-1">
                     <Medal className="text-gray-400 mb-2" size={32} />
-                    <div className="text-lg font-bold">{topThree[1].email.split('@')[0]}</div>
+                    <div className="text-lg font-bold">{maskEmail(topThree[1].email)}</div>
                     <div className="text-accent font-black">{topThree[1].total_xp} XP</div>
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-3 py-1 bg-gray-400 text-black text-xs font-black rounded-full">#2</div>
                   </div>
@@ -85,7 +98,7 @@ export default function LeaderboardPage() {
                 {topThree[0] && (
                   <div className="glass-card p-8 h-[250px] relative flex flex-col items-center justify-center border-accent/50 scale-105 bg-accent/5 order-1 md:order-2">
                     <Trophy className="text-accent mb-4 animate-bounce" size={48} />
-                    <div className="text-xl font-black">{topThree[0].email.split('@')[0]}</div>
+                    <div className="text-xl font-black">{maskEmail(topThree[0].email)}</div>
                     <div className="text-accent text-2xl font-black">{topThree[0].total_xp} XP</div>
                     <div className="text-xs text-gray-400 mt-2">{topThree[0].rank_title}</div>
                     <div className="absolute -top-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-accent text-black text-sm font-black rounded-full shadow-lg shadow-accent/20">#1</div>
@@ -96,7 +109,7 @@ export default function LeaderboardPage() {
                 {topThree[2] && (
                   <div className="glass-card p-6 h-[180px] relative flex flex-col items-center justify-center border-orange-400/20 order-3">
                     <Medal className="text-orange-500/60 mb-2" size={32} />
-                    <div className="text-lg font-bold">{topThree[2].email.split('@')[0]}</div>
+                    <div className="text-lg font-bold">{maskEmail(topThree[2].email)}</div>
                     <div className="text-accent font-black">{topThree[2].total_xp} XP</div>
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-3 py-1 bg-orange-700 text-white text-xs font-black rounded-full">#3</div>
                   </div>
@@ -124,7 +137,7 @@ export default function LeaderboardPage() {
                               {u.email[0].toUpperCase()}
                             </div>
                             <div>
-                              <div className="font-bold">{u.email.split('@')[0]}</div>
+                              <div className="font-bold">{maskEmail(u.email)}</div>
                               <div className="text-[10px] text-accent/70 uppercase font-black">{u.rank_title}</div>
                             </div>
                           </div>
