@@ -148,7 +148,7 @@ export async function POST(req: Request) {
       const varName = selected.name
       
       console.log(`[DEBUG] Variable: ${varName} | Key: ${geminiKey.substring(0, 4)}...${geminiKey.substring(geminiKey.length - 4)}`)
-      const models = ["models/gemini-3.1-flash-lite", "models/gemini-3.1-flash"]
+      const models = ["models/gemini-3.1-flash-lite", "models/gemini-2.0-flash", "models/gemini-1.5-flash"]
       let lastError = ""
 
       for (const model of models) {
