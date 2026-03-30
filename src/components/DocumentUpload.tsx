@@ -175,8 +175,18 @@ export default function DocumentUpload() {
         setStatus(`Lecture page ${i}/${total}...`)
         const page = await pdf.getPage(i)
         const content = await page.getTextContent()
-        const items = content.items || []
-        rawText += items.map((item: any) => item.str || '').join(' ') + "\n\n"
+        
+        // Sécurisation maximale pour mobile (évite le spread et map direct)
+        if (content && content.items) {
+          const items = content.items
+          for (let j = 0; j < items.length; j++) {
+            const item = items[j]
+            if (item && typeof item.str === 'string') {
+              rawText += item.str + ' '
+            }
+          }
+          rawText += "\n\n"
+        }
       }
     } else {
       setStatus('Chargement du moteur Word...')
