@@ -131,20 +131,22 @@ export async function POST(req: Request) {
       if (mistralData.error) throw new Error(mistralData.error.message)
       responseText = mistralData.choices?.[0]?.message?.content
     } else {
-      const keys = [
-        process.env.GOOGLE_GEMINI_API_KEY,
-        process.env.GOOGLE_GEMINI_API_KEY_1,
-        process.env.GOOGLE_API_KEY,
-        process.env.GEMINI_API_KEY
-      ].map(k => k?.trim()).filter(Boolean) as string[]
-      
-      if (keys.length === 0) {
+      const keysObj = [
+        { name: 'GOOGLE_GEMINI_API_KEY', val: process.env.GOOGLE_GEMINI_API_KEY },
+        { name: 'GOOGLE_GEMINI_API_KEY_1', val: process.env.GOOGLE_GEMINI_API_KEY_1 },
+        { name: 'GOOGLE_API_KEY', val: process.env.GOOGLE_API_KEY },
+        { name: 'GEMINI_API_KEY', val: process.env.GEMINI_API_KEY }
+      ].filter(k => k.val?.trim())
+
+      if (keysObj.length === 0) {
         console.error("ERREUR: Aucune clé Google/Gemini trouvée dans process.env")
         return NextResponse.json({ error: "Configuration IA incomplète (Clé Gemini absente)" }, { status: 500 })
       }
 
-      const geminiKey = keys[Math.floor(Math.random() * keys.length)]
-      console.log(`[DEBUG] Using Gemini Key: ${geminiKey.substring(0, 4)}...${geminiKey.substring(geminiKey.length - 4)}`)
+      const selected = keysObj[Math.floor(Math.random() * keysObj.length)]
+      const geminiKey = selected.val!.trim()
+      
+      console.log(`[DEBUG] Variable: ${selected.name} | Key: ${geminiKey.substring(0, 4)}...${geminiKey.substring(geminiKey.length - 4)}`)
       const models = ["models/gemini-3.1-flash-lite-preview", "models/gemini-1.5-flash-latest"]
       let lastError = ""
 
