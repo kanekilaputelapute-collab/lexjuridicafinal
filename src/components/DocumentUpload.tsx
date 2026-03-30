@@ -180,7 +180,7 @@ export default function DocumentUpload() {
         if (content && content.items) {
           const items = content.items
           for (let j = 0; j < items.length; j++) {
-            const item = items[j]
+            const item = items[j] as any
             if (item && typeof item.str === 'string') {
               rawText += item.str + ' '
             }
