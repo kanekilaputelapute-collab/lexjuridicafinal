@@ -146,19 +146,34 @@ export default function DocumentUpload() {
 
   const extractText = async (file: File): Promise<string> => {
     let rawText = ''
+
+    // Polyfill pour file.arrayBuffer() (vieux navigateurs mobiles)
+    const getBuffer = async (f: File): Promise<ArrayBuffer> => {
+      if (f.arrayBuffer) return await f.arrayBuffer()
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as ArrayBuffer)
+        reader.onerror = reject
+        reader.readAsArrayBuffer(f)
+      })
+    }
+
     if (file.type === 'application/pdf') {
       const pdfjsLib = await import('pdfjs-dist')
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
-      const arrayBuffer = await file.arrayBuffer()
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
+      const arrayBuffer = await getBuffer(file)
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer, stopAtErrors: true }).promise
       for (let i = 1; i <= pdf.numPages; i++) {
         if (isCancelled.current) throw new Error('CANCELED')
         const page = await pdf.getPage(i)
         const content = await page.getTextContent()
-        rawText += content.items.map((item: any) => item.str).join(' ') + "\n\n"
+        // Protection contre items non-existants
+        const items = content.items || []
+        rawText += items.map((item: any) => item.str || '').join(' ') + "\n\n"
       }
     } else {
-      const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() })
+      const arrayBuffer = await getBuffer(file)
+      const result = await mammoth.extractRawText({ arrayBuffer })
       rawText = result.value
     }
     return cleanExtractedText(rawText)

@@ -11,6 +11,13 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
 
+  const maskEmail = (email: string) => {
+    if (!email) return 'Anonyme'
+    const [local] = email.split('@')
+    if (local.length <= 2) return local[0] + '***'
+    return local[0] + '***' + local[local.length - 1]
+  }
+
   useEffect(() => {
     async function fetchLeaderboard() {
       const { data: { user } } = await supabase.auth.getUser()
@@ -43,13 +50,6 @@ export default function LeaderboardPage() {
     fetchLeaderboard()
   }, [])
 
-  const maskEmail = (email: string) => {
-    if (!email) return 'Anonyme'
-    const [local] = email.split('@')
-    if (local.length <= 2) return local[0] + '***'
-    return local[0] + '***' + local[local.length - 1]
-  }
-
   const topThree = leaderboard.slice(0, 3)
   const others = leaderboard.slice(3)
 
@@ -64,7 +64,7 @@ export default function LeaderboardPage() {
                 <Trophy className="text-accent" size={40} />
                 Classement National
               </h1>
-              <p className="text-gray-400">L'élite des étudiants en droit de LexJuridica.</p>
+              <p className="text-gray-400">L&apos;élite des étudiants en droit de LexJuridica.</p>
             </div>
             {currentUserRank && (
               <div className="glass-card px-6 py-4 border-accent/40 bg-accent/5">

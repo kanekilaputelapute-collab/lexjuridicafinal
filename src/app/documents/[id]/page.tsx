@@ -7,6 +7,7 @@ import { FileText, Download, Send, Bot, User, Loader2, ArrowLeft, Info } from 'l
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { generateFichePDF } from '@/lib/pdf'
+import ReactMarkdown from 'react-markdown'
 
 export default function DocumentDetailPage() {
   const { id } = useParams()
@@ -175,7 +176,7 @@ export default function DocumentDetailPage() {
                       ? 'bg-accent text-black font-semibold rounded-tr-none' 
                       : 'bg-white/10 border border-white/10 text-gray-100 rounded-tl-none'
                   }`}>
-                    {msg.content}
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
                 </div>
               ))}
