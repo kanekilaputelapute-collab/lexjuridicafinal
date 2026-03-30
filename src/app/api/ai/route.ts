@@ -144,6 +144,7 @@ export async function POST(req: Request) {
       }
 
       const geminiKey = keys[Math.floor(Math.random() * keys.length)]
+      console.log(`[DEBUG] Using Gemini Key: ${geminiKey.substring(0, 4)}...${geminiKey.substring(geminiKey.length - 4)}`)
       const models = ["models/gemini-3.1-flash-lite-preview", "models/gemini-1.5-flash-latest"]
       let lastError = ""
 
