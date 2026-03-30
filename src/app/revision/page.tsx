@@ -204,7 +204,7 @@ export default function RevisionPage() {
             level: Math.floor((xp.total_xp + 2) / 1000) + 1
           }).eq('id', user.id)
           
-          await updateGamification(user.id, 'flashcard')
+          await updateGamification(user.id, 'flashcards')
           window.dispatchEvent(new Event('update-xp'))
         }
       }
@@ -253,7 +253,7 @@ export default function RevisionPage() {
           level: Math.floor((xp.total_xp + xpGain)/1000)+1 
         }).eq('id', user.id)
         
-        await updateGamification(user.id, 'flashcard')
+        await updateGamification(user.id, 'flashcards')
         window.dispatchEvent(new Event('update-xp'))
       }
     }
