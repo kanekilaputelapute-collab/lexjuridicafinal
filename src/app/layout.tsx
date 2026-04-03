@@ -17,10 +17,9 @@ export default function RootLayout({
     <html lang="fr" className="h-full antialiased">
       <head>
         <Script
-          async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5470304040691258"
           crossOrigin="anonymous"
-          strategy="afterInteractive"
+          strategy="beforeInteractive"
         />
       </head>
       <body className="min-h-full flex flex-col bg-[#0f0f11] text-[#e8e8ee]">
